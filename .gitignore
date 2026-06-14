@@ -1,0 +1,23 @@
+# Assessment logs
+data/assessments.jsonl
+
+# IDE
+.vscode/
+.idea/
+
+# Dependencies
+node_modules/
+.next/
+out/
+
+# Environment
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+*.lcov

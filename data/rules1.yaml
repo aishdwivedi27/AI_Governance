@@ -1,0 +1,280 @@
+eu_ai_act:
+  regulation:
+    name: "Regulation (EU) 2024/1689"
+    short_name: "EU AI Act"
+    legal_status: "Binding Law"
+    entered_into_force: "2024-08-01"
+
+  classification_order:
+    - article_5_prohibited_practices
+    - annex_i_safety_component_check
+    - annex_iii_high_risk_check
+    - article_6_3_exemption_check
+    - article_50_transparency_check
+    - gpai_check
+    - final_classification
+
+article_5:
+  title: "Prohibited AI Practices"
+  classification: "UNACCEPTABLE_RISK"
+  applicable_from: "2025-02-02"
+
+  prohibited_practices:
+
+    - id: manipulation
+      article: "5(1)(a)"
+      name: "Harmful Manipulation"
+      description: "AI using subliminal, deceptive, or manipulative techniques that materially distort behaviour and cause significant harm."
+      triggers: ["manipulat", "subliminal", "deceptive", "coerce", "distort behav"]
+
+    - id: exploitation_of_vulnerabilities
+      article: "5(1)(b)"
+      name: "Exploitation of Vulnerabilities"
+      description: "Exploitation of age, disability, or socio-economic vulnerabilities."
+      triggers: ["exploit vulnerable", "age discrimination", "disability exploit", "socio-economic"]
+
+    - id: social_scoring
+      article: "5(1)(c)"
+      name: "Social Scoring"
+      description: "Evaluation or classification of individuals leading to unjustified detrimental treatment."
+      triggers: ["social score", "social rating", "citizen score", "behavior rating"]
+
+    - id: predictive_policing
+      article: "5(1)(d)"
+      name: "Individual Criminal Risk Prediction"
+      description: "Prediction of criminal offending based solely on profiling or personality characteristics."
+      triggers: ["predictive polic", "crime prediction", "criminal risk", "offending prediction"]
+
+    - id: facial_image_scraping
+      article: "5(1)(e)"
+      name: "Untargeted Facial Image Scraping"
+      description: "Untargeted scraping of facial images from internet or CCTV for facial recognition databases."
+      triggers: ["facial scraping", "untargeted scraping", "facial database"]
+
+    - id: emotion_recognition_workplace_education
+      article: "5(1)(f)"
+      name: "Emotion Recognition"
+      description: "Emotion recognition in workplace or educational settings."
+      triggers: ["emotion recognition workplace", "emotion recognition education", "affect detection work"]
+
+    - id: biometric_categorisation_sensitive_traits
+      article: "5(1)(g)"
+      name: "Sensitive Biometric Categorisation"
+      description: "Inferring protected or sensitive characteristics from biometric data."
+      triggers: ["biometric categorisation sensitive", "race infer biometric", "gender infer biometric"]
+
+    - id: real_time_remote_biometric_identification
+      article: "5(1)(h)"
+      name: "Real-Time Remote Biometric Identification"
+      description: "Use by law enforcement in publicly accessible spaces except narrow legal exceptions."
+      triggers: ["real-time remote biometric", "live facial recognition public", "real-time biometric id"]
+
+annex_i:
+  title: "Safety Components of Regulated Products"
+  classification: "HIGH_RISK"
+  applicable_from: "2027-08-02"
+
+  examples:
+    - medical_devices
+    - in_vitro_diagnostic_devices
+    - machinery
+    - aviation
+    - motor_vehicles
+    - rail_systems
+    - marine_equipment
+    - lift_safety_components
+
+  notes: "AI systems that are safety components of products subject to third-party conformity assessment."
+
+  triggers:
+    - "medical device"
+    - "in vitro diagnostic"
+    - "machinery directive"
+    - "aviation regulation"
+    - "motor vehicle"
+    - "rail system"
+    - "marine equipment"
+    - "lift directive"
+
+annex_iii:
+  title: "High-Risk AI Systems"
+  classification: "PRESUMED_HIGH_RISK"
+  applicable_from: "2026-08-02"
+
+  categories:
+
+    - id: biometrics
+      name: "Biometrics"
+      examples:
+        - biometric_identification
+        - biometric_categorisation
+        - emotion_recognition
+      triggers:
+        - "biometric identification"
+        - "biometric categorisation"
+        - "emotion recognition"
+        - "facial recognition"
+
+    - id: critical_infrastructure
+      name: "Critical Infrastructure"
+      examples:
+        - electricity_grid
+        - water_supply
+        - gas_network
+        - transport_management
+      triggers:
+        - "critical infrastructure"
+        - "electricity grid"
+        - "water supply"
+        - "transport management"
+
+    - id: education
+      name: "Education and Vocational Training"
+      examples:
+        - admissions
+        - assessment
+        - exam_marking
+        - student_evaluation
+      triggers:
+        - "education admission"
+        - "student assessment"
+        - "exam marking"
+        - "educational evaluation"
+
+    - id: employment
+      name: "Employment and Worker Management"
+      examples:
+        - recruitment
+        - cv_screening
+        - promotion
+        - dismissal
+        - task_allocation
+        - performance_management
+      triggers:
+        - "recruitment"
+        - "hiring"
+        - "cv screening"
+        - "promotion decision"
+        - "dismissal"
+        - "performance management"
+        - "task allocation"
+
+    - id: essential_services
+      name: "Essential Private and Public Services"
+      examples:
+        - credit_scoring
+        - insurance_risk_assessment
+        - welfare_eligibility
+        - public_benefits
+      triggers:
+        - "credit scoring"
+        - "credit assessment"
+        - "insurance risk"
+        - "welfare eligibility"
+        - "public benefits"
+
+    - id: law_enforcement
+      name: "Law Enforcement"
+      examples:
+        - evidence_assessment
+        - criminal_investigation
+        - recidivism_assessment
+      triggers:
+        - "law enforcement"
+        - "criminal investigation"
+        - "evidence assessment"
+        - "recidivism"
+
+    - id: migration_asylum_border_control
+      name: "Migration, Asylum and Border Management"
+      examples:
+        - visa_processing
+        - asylum_assessment
+        - border_risk_assessment
+      triggers:
+        - "migration"
+        - "asylum"
+        - "border control"
+        - "visa assessment"
+
+    - id: justice_and_democracy
+      name: "Administration of Justice and Democratic Processes"
+      examples:
+        - judicial_decision_support
+        - legal_analysis
+        - election_influence_systems
+      triggers:
+        - "judicial decision"
+        - "legal prediction"
+        - "election"
+        - "democratic process"
+
+article_6_3_exemption:
+  title: "Annex III Exemption Assessment"
+
+  exemption_conditions:
+
+    - id: procedural_task
+      description: "Performs only a narrow procedural task."
+
+    - id: improve_completed_human_activity
+      description: "Improves outcome of previously completed human activity."
+
+    - id: pattern_detection
+      description: "Detects patterns or deviations without materially influencing decisions."
+
+    - id: preparatory_task
+      description: "Performs preparatory work for human assessment."
+
+  exemption_test:
+    significant_risk_of_harm: false
+    materially_influences_decision: false
+
+article_50:
+  title: "Transparency Obligations"
+  classification: "LIMITED_RISK"
+
+  triggers:
+    - "chatbot"
+    - "synthetic content"
+    - "deepfake"
+    - "emotion recognition"
+    - "biometric categorisation"
+
+gpai:
+  title: "General Purpose AI"
+  classification: "GPAI"
+  applicable_from: "2025-08-02"
+
+  provider_obligations:
+    - technical_documentation
+    - copyright_policy
+    - transparency_requirements
+    - systemic_risk_assessment
+
+classification_outputs:
+  - UNACCEPTABLE_RISK
+  - HIGH_RISK
+  - LIMITED_RISK
+  - GPAI
+  - MINIMAL_RISK
+
+metadata:
+  version: "3.0.0"
+  last_reviewed: "2026-06-11"
+  regulation: "Regulation (EU) 2024/1689"
+  source: "EUR-Lex"
+  authority: "European Commission"
+  status: "Production Ready"
+
+  implementation_dates:
+    entry_into_force: "2024-08-01"
+    prohibited_practices: "2025-02-02"
+    gpai_obligations: "2025-08-02"
+    annex_iii_high_risk: "2026-08-02"
+    annex_i_safety_components: "2027-08-02"
+
+  notes:
+    - "Article 6(3) exemption assessment required before assigning HIGH_RISK."
+    - "Annex III becomes applicable 2026-08-02."
+    - "Risk scoring is organisational methodology, not EU AI Act text."
