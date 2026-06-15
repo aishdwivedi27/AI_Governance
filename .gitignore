@@ -13,6 +13,7 @@ out/
 # Environment
 .env.local
 .env.*.local
+.env
 
 # OS
 .DS_Store
