@@ -1,0 +1,378 @@
+[
+  {
+    "systemName": "test",
+    "description": "test system",
+    "classification": "MINIMAL_RISK",
+    "confidenceScore": 50,
+    "evidenceStrength": 25,
+    "violations": [],
+    "highRiskMatches": [],
+    "applicableArticles": [
+      "Article 4: General Provisions"
+    ],
+    "obligations": [
+      "Compliance with general EU law",
+      "Standard documentation"
+    ],
+    "reasoning": "MINIMAL RISK: No high-risk indicators identified. Standard compliance obligations apply.",
+    "metadata": {
+      "industry": "healthcare",
+      "geographies": [
+        "eu"
+      ]
+    },
+    "id": "9eaf11bc-5482-48c2-bf3d-901455fc165a",
+    "timestamp": "2026-06-13T03:35:47.951Z",
+    "rulesVersion": "3.0.0"
+  },
+  {
+    "systemName": "test",
+    "description": "test system",
+    "classification": "MINIMAL_RISK",
+    "confidenceScore": 50,
+    "evidenceStrength": 25,
+    "violations": [],
+    "highRiskMatches": [],
+    "applicableArticles": [
+      "Article 4: General Provisions"
+    ],
+    "obligations": [
+      "Compliance with general EU law",
+      "Standard documentation"
+    ],
+    "reasoning": "MINIMAL RISK: No high-risk indicators identified. Standard compliance obligations apply.",
+    "metadata": {
+      "industry": "healthcare",
+      "geographies": [
+        "eu"
+      ]
+    },
+    "id": "433c204d-46ed-4a1c-9191-2678f42b18dd",
+    "timestamp": "2026-06-13T03:36:04.394Z",
+    "rulesVersion": "3.0.0"
+  },
+  {
+    "systemName": "Facial Recognition System",
+    "description": "Identify people in public",
+    "classification": "HIGH_RISK",
+    "confidenceScore": 90,
+    "evidenceStrength": 90,
+    "violations": [],
+    "annex3Matches": [
+      {
+        "id": "biometrics",
+        "name": "Biometrics and Identification",
+        "examples": ["facial_recognition"]
+      }
+    ],
+    "applicableArticles": [
+      "Article 6: Classification",
+      "Article 9-16: High-Risk Obligations"
+    ],
+    "obligations": [
+      "Article 9: Risk Management System",
+      "Article 10: Data Governance",
+      "Article 11: Technical Documentation",
+      "Article 12: Logging",
+      "Article 13: Transparency",
+      "Article 14: Human Oversight",
+      "Article 15: Accuracy & Robustness",
+      "Article 16: Quality Management"
+    ],
+    "reasoning": "HIGH RISK (Annex III): System matches high-risk category: Biometrics and Identification. Full compliance obligations apply.",
+    "metadata": {
+      "industry": "Healthcare",
+      "geographies": [
+        "EU"
+      ],
+      "fundamentalRightsImpact": false,
+      "crossBorderImpact": false
+    },
+    "id": "d7987ba5-8862-496f-84fc-2410f7ced055",
+    "timestamp": "2026-06-13T03:42:32.902Z",
+    "rulesVersion": "3.1.0"
+  },
+  {
+    "systemName": "Facial Recognition System",
+    "description": "identify people in public",
+    "classification": "HIGH_RISK",
+    "confidenceScore": 90,
+    "evidenceStrength": 90,
+    "violations": [],
+    "annex3Matches": [
+      {
+        "id": "biometrics",
+        "name": "Biometrics and Identification",
+        "examples": ["facial_recognition"]
+      }
+    ],
+    "applicableArticles": [
+      "Article 6: Classification",
+      "Article 9-16: High-Risk Obligations"
+    ],
+    "obligations": [
+      "Article 9: Risk Management System",
+      "Article 10: Data Governance",
+      "Article 11: Technical Documentation",
+      "Article 12: Logging",
+      "Article 13: Transparency",
+      "Article 14: Human Oversight",
+      "Article 15: Accuracy & Robustness",
+      "Article 16: Quality Management"
+    ],
+    "reasoning": "HIGH RISK (Annex III): System matches high-risk category: Biometrics and Identification. Full compliance obligations apply.",
+    "metadata": {
+      "industry": "Financial Services",
+      "geographies": [
+        "EU",
+        "Global"
+      ],
+      "fundamentalRightsImpact": true,
+      "crossBorderImpact": false
+    },
+    "id": "efb8b2d3-4450-45e6-ba88-f5b031e8d67e",
+    "timestamp": "2026-06-13T03:43:31.957Z",
+    "rulesVersion": "3.1.0"
+  },
+  {
+    "systemName": "Facial Recognition System",
+    "description": "Recognises people by faces",
+    "classification": "HIGH_RISK",
+    "confidenceScore": 90,
+    "evidenceStrength": 90,
+    "violations": [],
+    "annex3Matches": [
+      {
+        "id": "biometrics",
+        "name": "Biometrics and Identification",
+        "examples": ["facial_recognition"]
+      }
+    ],
+    "applicableArticles": [
+      "Article 6: Classification",
+      "Article 9-16: High-Risk Obligations"
+    ],
+    "obligations": [
+      "Article 9: Risk Management System",
+      "Article 10: Data Governance",
+      "Article 11: Technical Documentation",
+      "Article 12: Logging",
+      "Article 13: Transparency",
+      "Article 14: Human Oversight",
+      "Article 15: Accuracy & Robustness",
+      "Article 16: Quality Management"
+    ],
+    "reasoning": "HIGH RISK (Annex III): System matches high-risk category: Biometrics and Identification. Full compliance obligations apply.",
+    "metadata": {
+      "industry": "Healthcare",
+      "geographies": [
+        "EU",
+        "Global"
+      ],
+      "fundamentalRightsImpact": false,
+      "crossBorderImpact": false
+    },
+    "id": "ba84e5ed-8212-4864-8e21-585231e8dfdb",
+    "timestamp": "2026-06-13T05:06:52.738Z",
+    "rulesVersion": "3.1.0"
+  },
+  {
+    "systemName": "Test",
+    "description": "Test system",
+    "classification": "MINIMAL_RISK",
+    "confidenceScore": 50,
+    "evidenceStrength": 25,
+    "violations": [],
+    "highRiskMatches": [],
+    "applicableArticles": [
+      "Article 4: General Provisions"
+    ],
+    "obligations": [
+      "Compliance with general EU law",
+      "Standard documentation"
+    ],
+    "reasoning": "MINIMAL RISK: No high-risk indicators identified. Standard compliance obligations apply.",
+    "metadata": {
+      "industry": "Healthcare",
+      "geographies": [
+        "EU"
+      ],
+      "fundamentalRightsImpact": false,
+      "crossBorderImpact": false
+    },
+    "id": "5e4f61c5-f982-484b-9d72-c315ae3b982a",
+    "timestamp": "2026-06-13T14:03:46.365Z",
+    "rulesVersion": "3.0.0"
+  },
+  {
+    "systemName": "Facial Recognition System",
+    "description": "Recognising people",
+    "classification": "HIGH_RISK",
+    "confidenceScore": 90,
+    "evidenceStrength": 90,
+    "violations": [],
+    "annex3Matches": [
+      {
+        "id": "biometrics",
+        "name": "Biometrics and Identification",
+        "examples": ["facial_recognition"]
+      }
+    ],
+    "applicableArticles": [
+      "Article 6: Classification",
+      "Article 9-16: High-Risk Obligations"
+    ],
+    "obligations": [
+      "Article 9: Risk Management System",
+      "Article 10: Data Governance",
+      "Article 11: Technical Documentation",
+      "Article 12: Logging",
+      "Article 13: Transparency",
+      "Article 14: Human Oversight",
+      "Article 15: Accuracy & Robustness",
+      "Article 16: Quality Management"
+    ],
+    "riskScore": 0,
+    "reasoning": "HIGH RISK (Annex III): System matches high-risk category: Biometrics and Identification. Full compliance obligations apply.",
+    "metadata": {
+      "industry": "Healthcare",
+      "geographies": [
+        "EU",
+        "Global"
+      ],
+      "fundamentalRightsImpact": false,
+      "crossBorderImpact": false
+    },
+    "id": "567adbab-ca4c-4a4b-a98f-4ca56e2b2ce8",
+    "timestamp": "2026-06-14T08:41:57.284Z",
+    "rulesVersion": "3.1.0"
+  },
+  {
+    "systemName": "Predictive ICU Deterioration",
+    "description": "calculation chances of person getting more sick",
+    "classification": "HIGH_RISK",
+    "confidenceScore": 90,
+    "evidenceStrength": 90,
+    "violations": [],
+    "annex3Matches": [
+      {
+        "id": "healthcare_ai",
+        "name": "Healthcare and Medical AI Systems",
+        "examples": ["icu_deterioration_prediction"]
+      }
+    ],
+    "applicableArticles": [
+      "Article 6: Classification",
+      "Article 9-16: High-Risk Obligations"
+    ],
+    "obligations": [
+      "Article 9: Risk Management System",
+      "Article 10: Data Governance",
+      "Article 11: Technical Documentation",
+      "Article 12: Logging",
+      "Article 13: Transparency",
+      "Article 14: Human Oversight",
+      "Article 15: Accuracy & Robustness",
+      "Article 16: Quality Management"
+    ],
+    "riskScore": 0,
+    "reasoning": "HIGH RISK (Annex III): System matches high-risk category: Healthcare and Medical AI Systems. Full compliance obligations apply.",
+    "metadata": {
+      "industry": "Healthcare",
+      "geographies": [
+        "EU",
+        "Global"
+      ],
+      "fundamentalRightsImpact": false,
+      "crossBorderImpact": false
+    },
+    "id": "9e12f0d4-12f5-4ea3-8eab-0f9a2f6d562b",
+    "timestamp": "2026-06-14T10:07:16.610Z",
+    "rulesVersion": "3.1.0"
+  },
+  {
+    "systemName": "Healthcare ICU Patient Deterioration",
+    "description": "This will use the vital from patient over time to predict if it can deteriorate and what kind of deterioration",
+    "classification": "HIGH_RISK",
+    "confidenceScore": 90,
+    "evidenceStrength": 90,
+    "violations": [],
+    "annex3Matches": [
+      {
+        "id": "healthcare_ai",
+        "name": "Healthcare and Medical AI Systems",
+        "examples": ["icu_deterioration_prediction"]
+      }
+    ],
+    "applicableArticles": [
+      "Article 6: Classification",
+      "Article 9-16: High-Risk Obligations"
+    ],
+    "obligations": [
+      "Article 9: Risk Management System",
+      "Article 10: Data Governance",
+      "Article 11: Technical Documentation",
+      "Article 12: Logging",
+      "Article 13: Transparency",
+      "Article 14: Human Oversight",
+      "Article 15: Accuracy & Robustness",
+      "Article 16: Quality Management"
+    ],
+    "riskScore": 0,
+    "reasoning": "HIGH RISK (Annex III): System matches high-risk category: Healthcare and Medical AI Systems. Full compliance obligations apply.",
+    "metadata": {
+      "industry": "Healthcare",
+      "geographies": [
+        "EU"
+      ],
+      "fundamentalRightsImpact": false,
+      "crossBorderImpact": false
+    },
+    "id": "9737c616-61ad-4450-aceb-dd808bcfe7c2",
+    "timestamp": "2026-06-14T10:11:33.614Z",
+    "rulesVersion": "3.1.0"
+  },
+  {
+    "systemName": "Facial Profiling",
+    "description": "This will check people face to identify which is employee or not",
+    "classification": "HIGH_RISK",
+    "confidenceScore": 90,
+    "evidenceStrength": 90,
+    "violations": [],
+    "annex3Matches": [
+      {
+        "id": "biometrics",
+        "name": "Biometrics and Identification",
+        "examples": ["facial_profiling"]
+      }
+    ],
+    "applicableArticles": [
+      "Article 6: Classification",
+      "Article 9-16: High-Risk Obligations"
+    ],
+    "obligations": [
+      "Article 9: Risk Management System",
+      "Article 10: Data Governance",
+      "Article 11: Technical Documentation",
+      "Article 12: Logging",
+      "Article 13: Transparency",
+      "Article 14: Human Oversight",
+      "Article 15: Accuracy & Robustness",
+      "Article 16: Quality Management"
+    ],
+    "riskScore": 0,
+    "reasoning": "HIGH RISK (Annex III): System matches high-risk category: Biometrics and Identification. Full compliance obligations apply.",
+    "metadata": {
+      "industry": "Healthcare",
+      "geographies": [
+        "EU",
+        "Global"
+      ],
+      "fundamentalRightsImpact": false,
+      "crossBorderImpact": false
+    },
+    "id": "5dd07082-ce24-4418-99eb-3563b91e7f0c",
+    "timestamp": "2026-06-14T10:12:16.542Z",
+    "rulesVersion": "3.1.0"
+  }
+]

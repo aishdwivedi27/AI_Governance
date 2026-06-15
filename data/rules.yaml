@@ -104,16 +104,41 @@ annex_iii:
   categories:
 
     - id: biometrics
-      name: "Biometrics"
+      name: "Biometrics and Identification"
       examples:
         - biometric_identification
         - biometric_categorisation
         - emotion_recognition
+        - facial_recognition
       triggers:
         - "biometric identification"
         - "biometric categorisation"
         - "emotion recognition"
         - "facial recognition"
+        - "biometric"
+        - "face recognition"
+        - "facial profiling"
+
+    - id: healthcare_ai
+      name: "Healthcare and Medical AI Systems"
+      examples:
+        - patient_outcome_prediction
+        - icu_deterioration_prediction
+        - clinical_decision_support
+        - medical_diagnosis
+        - patient_risk_assessment
+      triggers:
+        - "deterioration"
+        - "icu deterioration"
+        - "patient deterioration"
+        - "clinical decision support"
+        - "medical diagnosis"
+        - "patient prediction"
+        - "patient outcome"
+        - "clinical prediction"
+        - "vital signs prediction"
+        - "healthcare prediction"
+        - "vital prediction"
 
     - id: critical_infrastructure
       name: "Critical Infrastructure"
