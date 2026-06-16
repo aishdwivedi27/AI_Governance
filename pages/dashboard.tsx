@@ -164,36 +164,45 @@ export default function Dashboard() {
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  // Only submit if the submit button was actually clicked
+  const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLElement;
+  if (!submitter || submitter.getAttribute('type') !== 'submit') {
     e.preventDefault();
-    setIsLoading(true);
+    return;
+  }
 
-    try {
-      const res = await fetch('/api/classify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
+  // Actual form submission logic
+  e.preventDefault();
+  setIsLoading(true);
 
-      if (!res.ok) {
-        const error = await res.json();
-        alert(`Error: ${error.error}\n${error.details || ''}`);
-        return;
-      }
+  try {
+    const res = await fetch('/api/classify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData),
+    });
 
-      const data = await res.json();
-      setResult(data.assessment);
-      setStep(2);
-      loadStats();
-      loadHistory();
-    } catch (err) {
-      console.error('Submission error:', err);
-      alert('Failed to submit assessment');
-    } finally {
-      setIsLoading(false);
+    if (!res.ok) {
+      const error = await res.json();
+      alert(`Error: ${error.error}\n${error.details || ''}`);
+      return;
     }
-  };
 
+    const data = await res.json();
+    setResult(data.assessment);
+    setStep(2);
+    loadStats();
+    loadHistory();
+  } catch (err) {
+    console.error('Submission error:', err);
+    alert('Failed to submit assessment');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+      
   const exportData = async (format: 'json' | 'csv') => {
     try {
       const res = await fetch(`/api/assessments?action=export&format=${format}`);
@@ -249,7 +258,16 @@ export default function Dashboard() {
                     <CardTitle>Step 1: System Details</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <form onSubmit={handleSubmit} className="space-y-6">
+                    <form onSubmit={(e) => {e.preventDefault();
+                        handleSubmit(e);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                        }
+                      }}
+                      className="space-y-6"
+                    >
                       {/* System Name */}
                       <div>
                         <Label htmlFor="systemName">System Name *</Label>
@@ -280,8 +298,16 @@ export default function Dashboard() {
                       {/* Industry */}
                       <div>
                         <Label htmlFor="industry">Industry *</Label>
-                        <Select value={formData.industry} onValueChange={(value) => setFormData(prev => ({ ...prev, industry: value }))}>
-                          <SelectTrigger id="industry">
+                        <Select 
+                          value={formData.industry} 
+                          onValueChange={(value) => {
+                            setFormData(prev => ({ ...prev, industry: value }));
+                          }}
+                        >
+                          <SelectTrigger 
+                            id="industry"
+                            onMouseDown={(e) => e.preventDefault()}
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

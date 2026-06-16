@@ -173,28 +173,28 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
   const rules = loadRules();
   const combinedText = `${input.systemName} ${input.description} ${input.industry}`;
 
-  // STEP 1: Article 5 - Prohibited Practices
-  const violations: Violation[] = [];
-  const article5 = rules.article_5;
-  
-  if (article5?.prohibited_practices) {
-    for (const prohibition of article5.prohibited_practices) {
-      if (!prohibition.triggers || !Array.isArray(prohibition.triggers)) continue;
-      
-      const isTriggered = prohibition.triggers.some((trigger: string) =>
-        textContainsTrigger(combinedText, trigger)
-      );
+  // STEP 1: Article 5 - Prohibited Practices (EXACT MATCH ONLY - no fuzzy)
+    const violations: Violation[] = [];
+    const article5 = rules.article_5;
 
-      if (isTriggered) {
-        violations.push({
-          id: prohibition.id,
-          name: prohibition.name,
-          article: prohibition.article,
-          description: prohibition.description,
-        });
+    if (article5?.prohibited_practices) {
+      for (const prohibition of article5.prohibited_practices) {
+        if (!prohibition.triggers || !Array.isArray(prohibition.triggers)) continue;
+        
+        const isTriggered = prohibition.triggers.some((trigger: string) =>
+          normalizeText(combinedText).includes(normalizeText(trigger))  // EXACT MATCH ONLY
+        );
+
+        if (isTriggered) {
+          violations.push({
+            id: prohibition.id,
+            name: prohibition.name,
+            article: prohibition.article,
+            description: prohibition.description,
+          });
+        }
       }
     }
-  }
 
   if (violations.length > 0) {
     return {
