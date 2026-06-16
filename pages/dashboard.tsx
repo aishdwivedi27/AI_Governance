@@ -1,4 +1,4 @@
-// pages/dashboard.tsx - COMPLETE CORRECTED VERSION
+// pages/dashboard.tsx - FIXED VERSION WITH HISTORY DETAILS
 'use client';
 import { useState, useEffect } from 'react';
 import {
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui';
-import { AlertTriangle, CheckCircle, AlertCircle, Download, BarChart3 } from 'lucide-react';
+import { AlertTriangle, CheckCircle, AlertCircle, Download, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
 
 const classificationStyles: Record<string, any> = {
   UNACCEPTABLE_RISK: {
@@ -63,6 +63,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('assess');
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     systemName: '',
@@ -541,36 +542,104 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* HISTORY TAB */}
+        {/* HISTORY TAB - UPDATED WITH DETAILS */}
         {activeTab === 'history' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Assessment History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {history.length === 0 ? (
-                <p className="text-gray-600">No assessments yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {history.map(assessment => (
-                    <button
-                      key={assessment.id}
-                      onClick={() => setResult(assessment)}
-                      className="w-full text-left flex justify-between items-start p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition"
-                    >
-                      <div>
-                        <p className="font-semibold">{assessment.systemName}</p>
-                        <p className="text-sm text-gray-600">{new Date(assessment.timestamp).toLocaleString()}</p>
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Assessment History</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {history.length === 0 ? (
+                  <p className="text-gray-600">No assessments yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {history.map(assessment => (
+                      <div key={assessment.id}>
+                        <button
+                          onClick={() => setSelectedHistoryItem(
+                            selectedHistoryItem?.id === assessment.id ? null : assessment
+                          )}
+                          className="w-full text-left flex justify-between items-center p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition"
+                        >
+                          <div>
+                            <p className="font-semibold">{assessment.systemName}</p>
+                            <p className="text-sm text-gray-600">{new Date(assessment.timestamp).toLocaleString()}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className={`px-3 py-1 rounded text-sm ${classificationStyles[assessment.classification].badge}`}>
+                              {assessment.classification}
+                            </span>
+                            {selectedHistoryItem?.id === assessment.id ? (
+                              <ChevronUp className="w-5 h-5 text-gray-400" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5 text-gray-400" />
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Expanded Details */}
+                        {selectedHistoryItem?.id === assessment.id && (
+                          <div className={`mt-2 p-4 rounded-lg ${classificationStyles[assessment.classification].bg} border-2 ${classificationStyles[assessment.classification].border}`}>
+                            <div className="space-y-4">
+                              <div>
+                                <p className="text-sm font-medium text-gray-600">Confidence Score</p>
+                                <p className="text-lg font-bold">{assessment.confidenceScore}%</p>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-600">Evidence Strength</p>
+                                <p className="text-lg font-bold">{assessment.evidenceStrength}%</p>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-600">Reasoning</p>
+                                <p className="text-sm mt-2">{assessment.reasoning}</p>
+                              </div>
+
+                              {assessment.obligations?.length > 0 && (
+                                <div>
+                                  <p className="text-sm font-medium text-gray-600 mb-2">Key Obligations</p>
+                                  <ul className="space-y-2">
+                                    {assessment.obligations.map((ob: string, i: number) => (
+                                      <li key={i} className="flex items-start gap-2">
+                                        <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                                        <span className="text-sm">{ob}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {assessment.violations?.length > 0 && (
+                                <div>
+                                  <p className="text-sm font-medium text-gray-600 mb-2">Violations</p>
+                                  <ul className="space-y-1">
+                                    {assessment.violations.map((v: any) => (
+                                      <li key={v.id} className="text-sm">• {v.name}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {assessment.applicableArticles?.length > 0 && (
+                                <div>
+                                  <p className="text-sm font-medium text-gray-600 mb-2">Applicable Articles</p>
+                                  <ul className="space-y-1">
+                                    {assessment.applicableArticles.map((article: string, i: number) => (
+                                      <li key={i} className="text-sm">• {article}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <span className={`px-3 py-1 rounded text-sm ${classificationStyles[assessment.classification].badge}`}>
-                        {assessment.classification}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
         
         {/* STATS TAB */}
