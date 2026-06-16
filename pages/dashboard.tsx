@@ -553,7 +553,11 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-3">
                   {history.map(assessment => (
-                    <div key={assessment.id} className="flex justify-between items-start p-3 border rounded-lg">
+                    <button
+                      key={assessment.id}
+                      onClick={() => setResult(assessment)}
+                      className="w-full text-left flex justify-between items-start p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition"
+                    >
                       <div>
                         <p className="font-semibold">{assessment.systemName}</p>
                         <p className="text-sm text-gray-600">{new Date(assessment.timestamp).toLocaleString()}</p>
@@ -561,14 +565,14 @@ export default function Dashboard() {
                       <span className={`px-3 py-1 rounded text-sm ${classificationStyles[assessment.classification].badge}`}>
                         {assessment.classification}
                       </span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
             </CardContent>
           </Card>
         )}
-
+        
         {/* STATS TAB */}
         {activeTab === 'stats' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
