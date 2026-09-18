@@ -1,6 +1,4 @@
 // __tests__/assessment-log.test.ts
-import fs from 'fs';
-import path from 'path';
 import {
   appendAssessment,
   readAllAssessments,
@@ -11,16 +9,60 @@ import {
   exportAsJSON,
   exportAsCSV,
   getLogStats,
-  AssessmentRecord,
 } from '../lib/assessment-log';
+import { prisma } from '../lib/prisma';
 
 // Mock the getRulesVersion function to avoid file system access
 jest.mock('../lib/classification-engine', () => ({
   getRulesVersion: jest.fn(() => '3.0.0'),
 }));
 
-// Mock file system operations for tests
-jest.mock('fs');
+// Mock the Prisma client instead of the filesystem
+jest.mock('../lib/prisma', () => ({
+  prisma: {
+    assessment: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      count: jest.fn(),
+      aggregate: jest.fn(),
+      groupBy: jest.fn(),
+    },
+  },
+}));
+
+const mockPrisma = prisma as unknown as {
+  assessment: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    count: jest.Mock;
+    aggregate: jest.Mock;
+    groupBy: jest.Mock;
+  };
+};
+
+function toRow(record: Partial<Record<string, any>>) {
+  return {
+    id: record.id ?? 'generated-id',
+    timestamp: record.timestamp ? new Date(record.timestamp) : new Date('2024-01-01T00:00:00Z'),
+    systemName: record.systemName ?? '',
+    description: record.description ?? '',
+    classification: record.classification ?? 'MINIMAL_RISK',
+    confidenceScore: record.confidenceScore ?? 0,
+    evidenceStrength: record.evidenceStrength ?? 0,
+    violations: record.violations ?? [],
+    highRiskMatches: record.highRiskMatches ?? [],
+    applicableArticles: record.applicableArticles ?? [],
+    obligations: record.obligations ?? [],
+    riskScore: record.riskScore ?? null,
+    reasoning: record.reasoning ?? '',
+    rulesVersion: record.rulesVersion ?? '3.0.0',
+    metadata: record.metadata ?? {},
+  };
+}
 
 describe('Assessment Log', () => {
   const mockAssessment = {
@@ -47,10 +89,13 @@ describe('Assessment Log', () => {
   });
 
   describe('appendAssessment', () => {
-    test('should append assessment with generated ID and timestamp', () => {
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      const result = appendAssessment(mockAssessment);
-      
+    test('should append assessment with generated ID and timestamp', async () => {
+      mockPrisma.assessment.create.mockImplementationOnce(({ data }: any) =>
+        Promise.resolve(toRow(data))
+      );
+
+      const result = await appendAssessment(mockAssessment);
+
       expect(result).toHaveProperty('id');
       expect(result).toHaveProperty('timestamp');
       expect(result).toHaveProperty('rulesVersion');
@@ -58,20 +103,13 @@ describe('Assessment Log', () => {
       expect(result.classification).toBe(mockAssessment.classification);
     });
 
-    test('should create data directory if it does not exist', () => {
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(false);
-      (fs.mkdirSync as jest.Mock).mockImplementationOnce(() => {});
-      const result = appendAssessment(mockAssessment);
-      
-      expect(result.id).toBeTruthy();
-      expect(result.timestamp).toBeTruthy();
-      expect(fs.mkdirSync).toHaveBeenCalled();
-    });
+    test('should generate unique IDs for multiple assessments', async () => {
+      mockPrisma.assessment.create.mockImplementation(({ data }: any) =>
+        Promise.resolve(toRow(data))
+      );
 
-    test('should generate unique IDs for multiple assessments', () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      const assessment1 = appendAssessment(mockAssessment);
-      const assessment2 = appendAssessment({
+      const assessment1 = await appendAssessment(mockAssessment);
+      const assessment2 = await appendAssessment({
         ...mockAssessment,
         systemName: 'Another System',
       });
@@ -79,10 +117,13 @@ describe('Assessment Log', () => {
       expect(assessment1.id).not.toBe(assessment2.id);
     });
 
-    test('should preserve all assessment data', () => {
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      const result = appendAssessment(mockAssessment);
-      
+    test('should preserve all assessment data', async () => {
+      mockPrisma.assessment.create.mockImplementationOnce(({ data }: any) =>
+        Promise.resolve(toRow(data))
+      );
+
+      const result = await appendAssessment(mockAssessment);
+
       expect(result.systemName).toBe(mockAssessment.systemName);
       expect(result.description).toBe(mockAssessment.description);
       expect(result.classification).toBe(mockAssessment.classification);
@@ -90,215 +131,180 @@ describe('Assessment Log', () => {
       expect(result.evidenceStrength).toBe(mockAssessment.evidenceStrength);
       expect(result.metadata).toEqual(mockAssessment.metadata);
     });
+
+    test('should call prisma.assessment.create with a rules version stamp', async () => {
+      mockPrisma.assessment.create.mockImplementationOnce(({ data }: any) =>
+        Promise.resolve(toRow(data))
+      );
+
+      await appendAssessment(mockAssessment);
+
+      expect(mockPrisma.assessment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ rulesVersion: '3.0.0' }),
+        })
+      );
+    });
   });
 
   describe('readAllAssessments', () => {
-    test('should return empty array if log file does not exist', () => {
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(false);
-      const results = readAllAssessments();
-      
+    test('should return empty array if there are no records', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([]);
+      const results = await readAllAssessments();
+
       expect(Array.isArray(results)).toBe(true);
       expect(results.length).toBe(0);
     });
 
-    test('should parse valid JSONL entries', () => {
-      const mockData = [
-        { id: '1', systemName: 'System 1', classification: 'HIGH_RISK' },
-        { id: '2', systemName: 'System 2', classification: 'LIMITED_RISK' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+    test('should map DB rows into AssessmentRecord shape', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([
+        toRow({ id: '1', systemName: 'System 1', classification: 'HIGH_RISK' }),
+        toRow({ id: '2', systemName: 'System 2', classification: 'LIMITED_RISK' }),
+      ]);
 
-      const results = readAllAssessments();
+      const results = await readAllAssessments();
       expect(results.length).toBe(2);
       expect(results[0].systemName).toBe('System 1');
       expect(results[1].systemName).toBe('System 2');
+      expect(typeof results[0].timestamp).toBe('string');
     });
 
-    test('should handle malformed JSON gracefully', () => {
-      const mockData = `{"id": "1", "systemName": "System 1"}
-invalid json line
-{"id": "2", "systemName": "System 2"}`;
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(mockData);
+    test('should return assessments in order (oldest first)', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([
+        toRow({ id: '1', timestamp: '2024-01-01T00:00:00Z' }),
+        toRow({ id: '2', timestamp: '2024-01-02T00:00:00Z' }),
+        toRow({ id: '3', timestamp: '2024-01-03T00:00:00Z' }),
+      ]);
 
-      const results = readAllAssessments();
-      expect(results.length).toBe(2); // Only valid entries
-      expect(results[0].id).toBe('1');
-      expect(results[1].id).toBe('2');
-    });
-
-    test('should return assessments in order (oldest first)', () => {
-      const mockData = [
-        { id: '1', timestamp: '2024-01-01T00:00:00Z' },
-        { id: '2', timestamp: '2024-01-02T00:00:00Z' },
-        { id: '3', timestamp: '2024-01-03T00:00:00Z' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
-
-      const results = readAllAssessments();
+      const results = await readAllAssessments();
       expect(results[0].id).toBe('1');
       expect(results[1].id).toBe('2');
       expect(results[2].id).toBe('3');
+      expect(mockPrisma.assessment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { timestamp: 'asc' } })
+      );
     });
   });
 
   describe('getAssessmentById', () => {
-    test('should find assessment by ID', () => {
-      const mockData = [
-        { id: 'test-id-1', systemName: 'System 1' },
-        { id: 'test-id-2', systemName: 'System 2' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
+    test('should find assessment by ID', async () => {
+      mockPrisma.assessment.findUnique.mockResolvedValueOnce(
+        toRow({ id: 'test-id-2', systemName: 'System 2' })
       );
 
-      const result = getAssessmentById('test-id-2');
+      const result = await getAssessmentById('test-id-2');
       expect(result).not.toBeNull();
       expect(result?.systemName).toBe('System 2');
     });
 
-    test('should return null if assessment not found', () => {
-      const mockData = [{ id: 'test-id-1', systemName: 'System 1' }];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+    test('should return null if assessment not found', async () => {
+      mockPrisma.assessment.findUnique.mockResolvedValueOnce(null);
 
-      const result = getAssessmentById('non-existent-id');
+      const result = await getAssessmentById('non-existent-id');
       expect(result).toBeNull();
     });
   });
 
   describe('getLatestAssessments', () => {
-    test('should return most recent assessments first', () => {
-      const mockData = [
-        { id: '1', timestamp: '2024-01-01T00:00:00Z', systemName: 'Old' },
-        { id: '2', timestamp: '2024-01-02T00:00:00Z', systemName: 'New' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+    test('should return most recent assessments first', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([
+        toRow({ id: '2', timestamp: '2024-01-02T00:00:00Z', systemName: 'New' }),
+        toRow({ id: '1', timestamp: '2024-01-01T00:00:00Z', systemName: 'Old' }),
+      ]);
 
-      const results = getLatestAssessments(10);
+      const results = await getLatestAssessments(10);
       expect(results[0].id).toBe('2'); // Most recent
       expect(results[1].id).toBe('1');
+      expect(mockPrisma.assessment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { timestamp: 'desc' }, take: 10 })
+      );
     });
 
-    test('should respect limit parameter', () => {
-      const mockData = Array.from({ length: 50 }, (_, i) => ({
-        id: `${i}`,
-        systemName: `System ${i}`,
-      }));
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
+    test('should pass the limit through to the query', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce(
+        Array.from({ length: 10 }, (_, i) => toRow({ id: `${i}`, systemName: `System ${i}` }))
       );
 
-      const results = getLatestAssessments(10);
+      const results = await getLatestAssessments(10);
       expect(results.length).toBe(10);
+      expect(mockPrisma.assessment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 10 })
+      );
     });
   });
 
   describe('searchAssessments', () => {
-    test('should find assessments by system name', () => {
-      const mockData = [
-        { id: '1', systemName: 'Facial Recognition', classification: 'HIGH_RISK', description: 'Test' },
-        { id: '2', systemName: 'Email Filter', classification: 'MINIMAL_RISK', description: 'Test' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+    test('should find assessments by system name', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([
+        toRow({ id: '1', systemName: 'Facial Recognition', classification: 'HIGH_RISK', description: 'Test' }),
+      ]);
 
-      const results = searchAssessments('Facial');
+      const results = await searchAssessments('Facial');
       expect(results.length).toBe(1);
       expect(results[0].systemName).toBe('Facial Recognition');
+      expect(mockPrisma.assessment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { systemName: { contains: 'Facial', mode: 'insensitive' } },
+              { classification: { contains: 'Facial', mode: 'insensitive' } },
+              { description: { contains: 'Facial', mode: 'insensitive' } },
+            ],
+          },
+        })
+      );
     });
 
-    test('should find assessments by classification', () => {
-      const mockData = [
-        { id: '1', systemName: 'System 1', classification: 'HIGH_RISK', description: 'Test' },
-        { id: '2', systemName: 'System 2', classification: 'HIGH_RISK', description: 'Test' },
-        { id: '3', systemName: 'System 3', classification: 'MINIMAL_RISK', description: 'Test' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+    test('should find assessments by classification', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([
+        toRow({ id: '1', systemName: 'System 1', classification: 'HIGH_RISK', description: 'Test' }),
+        toRow({ id: '2', systemName: 'System 2', classification: 'HIGH_RISK', description: 'Test' }),
+      ]);
 
-      const results = searchAssessments('HIGH_RISK');
+      const results = await searchAssessments('HIGH_RISK');
       expect(results.length).toBe(2);
-    });
-
-    test('should be case-insensitive', () => {
-      const mockData = [
-        { id: '1', systemName: 'Facial Recognition', description: 'Test' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
-
-      const results = searchAssessments('facial');
-      expect(results.length).toBe(1);
     });
   });
 
   describe('getStatistics', () => {
-    test('should calculate classification counts', () => {
-      const mockData = [
-        { id: '1', classification: 'HIGH_RISK' },
-        { id: '2', classification: 'HIGH_RISK' },
-        { id: '3', classification: 'LIMITED_RISK' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+    test('should calculate classification counts', async () => {
+      mockPrisma.assessment.count.mockResolvedValueOnce(3);
+      mockPrisma.assessment.aggregate.mockResolvedValueOnce({
+        _avg: { confidenceScore: 85, evidenceStrength: 88 },
+      });
+      mockPrisma.assessment.groupBy.mockResolvedValueOnce([
+        { classification: 'HIGH_RISK', _count: { _all: 2 } },
+        { classification: 'LIMITED_RISK', _count: { _all: 1 } },
+      ]);
+      mockPrisma.assessment.findFirst.mockResolvedValueOnce(toRow({ id: '3' }));
 
-      const stats = getStatistics();
+      const stats = await getStatistics();
       expect(stats.byClassification.HIGH_RISK).toBe(2);
       expect(stats.byClassification.LIMITED_RISK).toBe(1);
+      expect(stats.totalAssessments).toBe(3);
     });
 
-    test('should calculate average confidence score', () => {
-      const mockData = [
-        { id: '1', confidenceScore: 80, classification: 'HIGH_RISK' },
-        { id: '2', confidenceScore: 90, classification: 'HIGH_RISK' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+    test('should calculate average confidence score', async () => {
+      mockPrisma.assessment.count.mockResolvedValueOnce(2);
+      mockPrisma.assessment.aggregate.mockResolvedValueOnce({
+        _avg: { confidenceScore: 85, evidenceStrength: 88 },
+      });
+      mockPrisma.assessment.groupBy.mockResolvedValueOnce([]);
+      mockPrisma.assessment.findFirst.mockResolvedValueOnce(toRow({ id: '1' }));
 
-      const stats = getStatistics();
+      const stats = await getStatistics();
       expect(stats.averageConfidence).toBe(85);
     });
 
-    test('should return zero stats for empty log', () => {
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(false);
-      const stats = getStatistics();
-      
+    test('should return zero stats for empty log', async () => {
+      mockPrisma.assessment.count.mockResolvedValueOnce(0);
+      mockPrisma.assessment.aggregate.mockResolvedValueOnce({
+        _avg: { confidenceScore: null, evidenceStrength: null },
+      });
+      mockPrisma.assessment.groupBy.mockResolvedValueOnce([]);
+      mockPrisma.assessment.findFirst.mockResolvedValueOnce(null);
+
+      const stats = await getStatistics();
       expect(stats.totalAssessments).toBe(0);
       expect(stats.averageConfidence).toBe(0);
       expect(stats.lastAssessment).toBeNull();
@@ -306,17 +312,12 @@ invalid json line
   });
 
   describe('exportAsJSON', () => {
-    test('should export valid JSON', () => {
-      const mockData = [
-        { id: '1', systemName: 'System 1' },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+    test('should export valid JSON', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([
+        toRow({ id: '1', systemName: 'System 1' }),
+      ]);
 
-      const json = exportAsJSON();
+      const json = await exportAsJSON();
       const parsed = JSON.parse(json);
       expect(Array.isArray(parsed)).toBe(true);
       expect(parsed[0].systemName).toBe('System 1');
@@ -324,54 +325,67 @@ invalid json line
   });
 
   describe('exportAsCSV', () => {
-    test('should export valid CSV format', () => {
-      const mockData = [
-        { 
-          id: '1', 
-          timestamp: '2024-01-01', 
+    test('should export valid CSV format', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([
+        toRow({
+          id: '1',
+          timestamp: '2024-01-01T00:00:00Z',
           systemName: 'System 1',
           classification: 'HIGH_RISK',
           confidenceScore: 90,
           evidenceStrength: 85,
           rulesVersion: '3.0.0',
-        },
-      ];
-      
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(true);
-      (fs.readFileSync as jest.Mock).mockReturnValueOnce(
-        mockData.map(d => JSON.stringify(d)).join('\n')
-      );
+        }),
+      ]);
 
-      const csv = exportAsCSV();
+      const csv = await exportAsCSV();
       expect(csv).toContain('ID');
       expect(csv).toContain('System Name');
       expect(csv).toContain('HIGH_RISK');
     });
 
-    test('should return empty string for empty log', () => {
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(false);
-      const csv = exportAsCSV();
+    test('should return empty string for empty log', async () => {
+      mockPrisma.assessment.findMany.mockResolvedValueOnce([]);
+      const csv = await exportAsCSV();
       expect(csv).toBe('');
     });
   });
 
   describe('getLogStats', () => {
-    test('should return zero stats if log file does not exist', () => {
-      (fs.existsSync as jest.Mock).mockReturnValueOnce(false);
-      const stats = getLogStats();
-      
-      expect(stats.fileSize).toBe(0);
-      expect(stats.fileSize_MB).toBe('0.00');
+    test('should return zero stats if there are no records', async () => {
+      mockPrisma.assessment.count.mockResolvedValueOnce(0);
+      mockPrisma.assessment.findFirst.mockResolvedValueOnce(null);
+
+      const stats = await getLogStats();
+
       expect(stats.entriesCount).toBe(0);
       expect(stats.createdAt).toBeNull();
+      expect(stats.lastModified).toBeNull();
+      expect(stats.storageType).toBe('postgresql');
+    });
+
+    test('should return earliest/latest timestamps when records exist', async () => {
+      mockPrisma.assessment.count.mockResolvedValueOnce(2);
+      mockPrisma.assessment.findFirst
+        .mockResolvedValueOnce(toRow({ id: '1', timestamp: '2024-01-01T00:00:00Z' }))
+        .mockResolvedValueOnce(toRow({ id: '2', timestamp: '2024-01-02T00:00:00Z' }));
+
+      const stats = await getLogStats();
+
+      expect(stats.entriesCount).toBe(2);
+      expect(stats.createdAt).toBe('2024-01-01T00:00:00.000Z');
+      expect(stats.lastModified).toBe('2024-01-02T00:00:00.000Z');
     });
   });
 
   describe('Data Integrity', () => {
-    test('should maintain immutability - no modifications to existing records', () => {
-      (fs.existsSync as jest.Mock).mockReturnValue(true);
-      const assessment1 = appendAssessment(mockAssessment);
-      const assessment2 = appendAssessment({
+    test('should maintain immutability - no modifications to existing records', async () => {
+      mockPrisma.assessment.create.mockImplementation(({ data }: any) =>
+        Promise.resolve(toRow(data))
+      );
+
+      const assessment1 = await appendAssessment(mockAssessment);
+      const assessment2 = await appendAssessment({
         ...mockAssessment,
         systemName: 'Different System',
       });

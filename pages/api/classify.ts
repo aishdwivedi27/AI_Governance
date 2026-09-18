@@ -8,13 +8,13 @@ type ResponseData =
   | { error: string; details?: string }
   | { success: boolean; assessment: any };
 
-export default function handler(
+export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<ResponseData>
 ) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ 
-      error: 'Method not allowed. Use POST.' 
+    return res.status(405).json({
+      error: 'Method not allowed. Use POST.'
     });
   }
 
@@ -23,8 +23,8 @@ export default function handler(
 
     // Validate input
     if (!input) {
-      return res.status(400).json({ 
-        error: 'Request body is required' 
+      return res.status(400).json({
+        error: 'Request body is required'
       });
     }
 
@@ -32,7 +32,7 @@ export default function handler(
     const classificationResult = classifyAISystem(input);
 
     // Store in assessment log
-    const assessment = appendAssessment({
+    const assessment = await appendAssessment({
       systemName: input.systemName,
       description: input.description,
       classification: classificationResult.classification,

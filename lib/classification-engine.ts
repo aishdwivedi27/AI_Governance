@@ -45,6 +45,8 @@ function loadRules() {
   return cachedRules;
 }
 
+export type Role = 'provider' | 'deployer' | 'importer' | 'distributor' | 'product_manufacturer';
+
 export interface AssessmentInput {
   systemName: string;
   description: string;
@@ -55,6 +57,20 @@ export interface AssessmentInput {
   crossBorderImpact: boolean;
   riskSeverity?: number;
   riskLikelihood?: number;
+
+  // Who is being assessed - drives role-scoped obligations
+  role: Role[];
+
+  // Article 6(3) exemption inputs - optional, undefined/false = no exemption
+  performsNarrowProceduralTask?: boolean;
+  improvesCompletedHumanActivity?: boolean;
+  detectsPatternsWithoutInfluencingDecisions?: boolean;
+  performsPreparatoryWork?: boolean;
+  significantRiskOfHarm?: boolean;
+
+  // GPAI systemic risk inputs - only meaningful when GPAI triggers
+  gpaiTrainingComputeFLOPs?: number;
+  gpaiSystemicRiskDesignation?: boolean;
 }
 
 export type RiskClassification = 'UNACCEPTABLE_RISK' | 'HIGH_RISK' | 'LIMITED_RISK' | 'GPAI' | 'MINIMAL_RISK';
@@ -84,6 +100,7 @@ export interface ClassificationResult {
   obligations: string[];
   riskScore?: number;
   reasoning: string;
+  exemptionApplied?: boolean;
 }
 
 function normalizeText(text: string): string {
@@ -155,6 +172,122 @@ function textContainsTrigger(text: string, trigger: string): boolean {
   return wordContainsTriggerFuzzy(text, trigger);
 }
 
+type ObligationTier = 'HIGH_RISK' | 'LIMITED_RISK' | 'GPAI' | 'GPAI_SYSTEMIC';
+
+const ROLE_OBLIGATIONS: Record<ObligationTier, Record<Role, string[]>> = {
+  HIGH_RISK: {
+    provider: [
+      'Article 9: Risk Management System',
+      'Article 10: Data Governance',
+      'Article 11: Technical Documentation',
+      'Article 12: Logging',
+      'Article 13: Transparency',
+      'Article 14: Human Oversight',
+      'Article 15: Accuracy & Robustness',
+      'Article 16: Quality Management System',
+    ],
+    deployer: [
+      'Article 14: Assign Human Oversight',
+      'Article 26: Use System per Provider Instructions',
+      'Article 26: Monitor Operation and Retain Logs',
+      'Article 26: Inform Affected Workers and Representatives',
+      'Article 26: Conduct Fundamental Rights Impact Assessment (where applicable)',
+    ],
+    importer: [
+      'Article 23: Verify Provider Conformity Assessment',
+      'Article 23: Verify CE Marking and Documentation',
+      'Article 23: Ensure Storage/Transport Preserves Conformity',
+    ],
+    distributor: [
+      'Article 24: Verify CE Marking Before Market Placement',
+      'Article 24: Verify Required Documentation Present',
+      'Article 24: Cooperate with Corrective Actions and Withdrawals',
+    ],
+    product_manufacturer: [
+      'Article 25(3): Treated as Provider - Article 9: Risk Management System',
+      'Article 25(3): Treated as Provider - Article 10: Data Governance',
+      'Article 25(3): Treated as Provider - Article 11: Technical Documentation',
+      'Article 25(3): Treated as Provider - Article 12: Logging',
+      'Article 25(3): Treated as Provider - Article 13: Transparency',
+      'Article 25(3): Treated as Provider - Article 14: Human Oversight',
+      'Article 25(3): Treated as Provider - Article 15: Accuracy & Robustness',
+      'Article 25(3): Treated as Provider - Article 16: Quality Management System',
+    ],
+  },
+  LIMITED_RISK: {
+    provider: [
+      'Article 50(1): Design System to Enable AI-Disclosure',
+      'Article 50(2): Mark Synthetic Audio/Image/Video/Text as AI-Generated',
+    ],
+    deployer: [
+      'Article 50(3): Inform Natural Persons of Emotion Recognition/Biometric Categorisation',
+      'Article 50(4): Disclose AI-Generated or Manipulated Content to Users',
+    ],
+    importer: ['Article 50: Verify Transparency Measures Are Present'],
+    distributor: ['Article 50: Verify Transparency Measures Are Present'],
+    product_manufacturer: ['Article 50: Verify Transparency Measures Are Present'],
+  },
+  GPAI: {
+    provider: [
+      'Article 53: Maintain Technical Documentation',
+      'Article 53: Copyright Policy Compliance',
+      'Article 53: Provide Information to Downstream Providers',
+      'Article 53: Transparency Requirements',
+    ],
+    deployer: [
+      'Article 50: Downstream Transparency to End Users',
+      'Article 26: Use per Provider Instructions',
+    ],
+    importer: ['Article 53: Verify Provider GPAI Compliance Documentation'],
+    distributor: ['Article 53: Verify Provider GPAI Compliance Documentation'],
+    product_manufacturer: ['Article 53: Verify Provider GPAI Compliance Documentation'],
+  },
+  GPAI_SYSTEMIC: {
+    provider: [
+      'Article 53: Maintain Technical Documentation',
+      'Article 53: Copyright Policy Compliance',
+      'Article 53: Provide Information to Downstream Providers',
+      'Article 53: Transparency Requirements',
+      'Article 55: Perform Model Evaluation and Adversarial Testing',
+      'Article 55: Assess and Mitigate Systemic Risk',
+      'Article 55: Report Serious Incidents to the AI Office',
+      'Article 55: Ensure Adequate Cybersecurity Protection',
+    ],
+    deployer: [
+      'Article 50: Downstream Transparency to End Users',
+      'Article 26: Use per Provider Instructions',
+      'Article 55: Monitor Provider Systemic Risk Mitigation Measures',
+    ],
+    importer: [
+      'Article 53: Verify Provider GPAI Compliance Documentation',
+      'Article 55: Monitor Provider Systemic Risk Mitigation Measures',
+    ],
+    distributor: [
+      'Article 53: Verify Provider GPAI Compliance Documentation',
+      'Article 55: Monitor Provider Systemic Risk Mitigation Measures',
+    ],
+    product_manufacturer: [
+      'Article 53: Verify Provider GPAI Compliance Documentation',
+      'Article 55: Monitor Provider Systemic Risk Mitigation Measures',
+    ],
+  },
+};
+
+function getObligationsForRoles(tier: ObligationTier, roles: Role[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const role of roles) {
+    const obligations = ROLE_OBLIGATIONS[tier]?.[role] ?? [];
+    for (const obligation of obligations) {
+      if (!seen.has(obligation)) {
+        seen.add(obligation);
+        result.push(obligation);
+      }
+    }
+  }
+  return result;
+}
+
 export function classifyAISystem(input: AssessmentInput): ClassificationResult {
   // Basic validation
   if (!input.systemName?.trim()) {
@@ -168,6 +301,9 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
   }
   if (!Array.isArray(input.geographies) || input.geographies.length === 0) {
     throw new Error('Validation failed: At least one geography must be selected');
+  }
+  if (!Array.isArray(input.role) || input.role.length === 0) {
+    throw new Error('Validation failed: At least one role must be selected');
   }
 
   const rules = loadRules();
@@ -231,28 +367,31 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
       annex1Matches,
       annex3Matches: [],
       applicableArticles: ['Article 6: Classification', 'Article 9-16: High-Risk Obligations'],
-      obligations: [
-        'Article 9: Risk Management System',
-        'Article 10: Data Governance',
-        'Article 11: Technical Documentation',
-        'Article 12: Logging',
-        'Article 13: Transparency',
-        'Article 14: Human Oversight',
-        'Article 15: Accuracy & Robustness',
-        'Article 16: Quality Management',
-      ],
+      obligations: getObligationsForRoles('HIGH_RISK', input.role),
       reasoning: `HIGH RISK (Annex I): System is a safety component of regulated products. Full compliance obligations apply.`,
     };
+  }
+
+  // Article 50 matches are computed here so STEP 3 can merge them into an Annex III
+  // result when both genuinely apply, instead of only being reachable standalone.
+  const article50 = rules.article_50;
+  const article50Matches: string[] = [];
+  if (article50?.triggers && Array.isArray(article50.triggers)) {
+    for (const trigger of article50.triggers) {
+      if (textContainsTrigger(combinedText, trigger)) {
+        article50Matches.push(trigger);
+      }
+    }
   }
 
   // STEP 3: Annex III - High-Risk Categories
   const annex3Matches: AnnexMatch[] = [];
   const annexIII = rules.annex_iii;
-  
+
   if (annexIII?.categories && Array.isArray(annexIII.categories)) {
     for (const category of annexIII.categories) {
       if (!category.triggers || !Array.isArray(category.triggers)) continue;
-      
+
       const isCategoryMatch = category.triggers.some((trigger: string) =>
         textContainsTrigger(combinedText, trigger)
       );
@@ -268,6 +407,48 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
   }
 
   if (annex3Matches.length > 0) {
+    // Article 6(3) exemption assessment
+    const exemptionConditionMet =
+      !!input.performsNarrowProceduralTask ||
+      !!input.improvesCompletedHumanActivity ||
+      !!input.detectsPatternsWithoutInfluencingDecisions ||
+      !!input.performsPreparatoryWork;
+    const exemptionApplies = exemptionConditionMet && !input.significantRiskOfHarm;
+
+    if (exemptionApplies) {
+      return {
+        classification: 'LIMITED_RISK',
+        confidenceScore: 70,
+        evidenceStrength: 70,
+        violations: [],
+        annex1Matches: [],
+        annex3Matches,
+        applicableArticles: ['Article 6(3): High-Risk Exemption', 'Article 6(4): Exemption Documentation'],
+        obligations: [
+          'Document the exemption assessment and reasoning',
+          'Register the exemption in the EU database per Article 49(2)',
+          'Retain evidence supporting the exemption for market surveillance authorities',
+        ],
+        exemptionApplied: true,
+        reasoning: `LIMITED RISK (Article 6(3) Exemption): System matches ${annex3Matches.length} Annex III high-risk category(ies) (${annex3Matches.map(m => m.name).join(', ')}) but qualifies for the Article 6(3) exemption, as it does not pose a significant risk of harm. Article 6(4) documentation and registration obligations apply instead of full high-risk obligations.`,
+      };
+    }
+
+    let reasoning = `HIGH RISK (Annex III): System matches ${annex3Matches.length} high-risk category(ies): ${annex3Matches.map(m => m.name).join(', ')}. Full compliance obligations apply.`;
+    if (exemptionConditionMet && input.significantRiskOfHarm) {
+      reasoning += ` An Article 6(3) exemption condition was met but was rejected because the system poses a significant risk of harm.`;
+    }
+
+    const applicableArticles = ['Article 6: Classification', 'Article 9-16: High-Risk Obligations'];
+    let obligations = getObligationsForRoles('HIGH_RISK', input.role);
+
+    if (article50Matches.length > 0) {
+      applicableArticles.push('Article 50: Transparency Obligations');
+      const transparencyObligations = getObligationsForRoles('LIMITED_RISK', input.role);
+      obligations = [...obligations, ...transparencyObligations.filter(o => !obligations.includes(o))];
+      reasoning += ` The system also triggers Article 50 transparency obligations (matched: ${article50Matches.join(', ')}).`;
+    }
+
     return {
       classification: 'HIGH_RISK',
       confidenceScore: 90,
@@ -275,47 +456,56 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
       violations: [],
       annex1Matches: [],
       annex3Matches,
-      applicableArticles: ['Article 6: Classification', 'Article 9-16: High-Risk Obligations'],
-      obligations: [
-        'Article 9: Risk Management System',
-        'Article 10: Data Governance',
-        'Article 11: Technical Documentation',
-        'Article 12: Logging',
-        'Article 13: Transparency',
-        'Article 14: Human Oversight',
-        'Article 15: Accuracy & Robustness',
-        'Article 16: Quality Management',
-      ],
-      reasoning: `HIGH RISK (Annex III): System matches ${annex3Matches.length} high-risk category(ies): ${annex3Matches.map(m => m.name).join(', ')}. Full compliance obligations apply.`,
+      applicableArticles,
+      obligations,
+      exemptionApplied: false,
+      reasoning,
     };
   }
 
-  // STEP 4: Article 50 - Transparency
-  const article50 = rules.article_50;
-  if (article50?.triggers && Array.isArray(article50.triggers)) {
-    for (const trigger of article50.triggers) {
-      if (textContainsTrigger(combinedText, trigger)) {
-        return {
-          classification: 'LIMITED_RISK',
-          confidenceScore: 75,
-          evidenceStrength: 75,
-          violations: [],
-          annex1Matches: [],
-          annex3Matches: [],
-          applicableArticles: ['Article 50: Transparency Obligations'],
-          obligations: [
-            'Disclosure that output is AI-generated',
-            'Clear identification of synthetic content',
-            'Transparency to deployer',
-          ],
-          reasoning: `LIMITED RISK: System has transparency obligations under Article 50. Users must be informed that content is AI-generated.`,
-        };
-      }
-    }
+  // STEP 4: Article 50 - Transparency (standalone, when Annex III did not match)
+  if (article50Matches.length > 0) {
+    return {
+      classification: 'LIMITED_RISK',
+      confidenceScore: 75,
+      evidenceStrength: 75,
+      violations: [],
+      annex1Matches: [],
+      annex3Matches: [],
+      applicableArticles: ['Article 50: Transparency Obligations'],
+      obligations: getObligationsForRoles('LIMITED_RISK', input.role),
+      reasoning: `LIMITED RISK: System has transparency obligations under Article 50 (matched: ${article50Matches.join(', ')}). Users must be informed that content is AI-generated.`,
+    };
   }
 
   // STEP 5: GPAI Check
   if (textContainsTrigger(combinedText, 'general purpose') || textContainsTrigger(combinedText, 'large language')) {
+    const isSystemicRisk =
+      !!input.gpaiSystemicRiskDesignation ||
+      (input.gpaiTrainingComputeFLOPs !== undefined && input.gpaiTrainingComputeFLOPs >= 1e25);
+
+    if (isSystemicRisk) {
+      const trigger = input.gpaiSystemicRiskDesignation
+        ? 'a Commission systemic-risk designation'
+        : `training compute of ${input.gpaiTrainingComputeFLOPs} FLOPs (>= 1e25 threshold)`;
+      return {
+        classification: 'GPAI',
+        confidenceScore: 85,
+        evidenceStrength: 85,
+        violations: [],
+        annex1Matches: [],
+        annex3Matches: [],
+        applicableArticles: [
+          'Article 3(1): GPAI Definition',
+          'Article 53: GPAI Provider Obligations',
+          'Article 51: Systemic Risk Classification',
+          'Article 55: Systemic Risk Obligations',
+        ],
+        obligations: getObligationsForRoles('GPAI_SYSTEMIC', input.role),
+        reasoning: `GPAI (Systemic Risk): System qualifies as General Purpose AI with systemic risk under Article 51, based on ${trigger}. Enhanced obligations under Article 55 apply in addition to standard Article 53 provider obligations.`,
+      };
+    }
+
     return {
       classification: 'GPAI',
       confidenceScore: 80,
@@ -324,12 +514,7 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
       annex1Matches: [],
       annex3Matches: [],
       applicableArticles: ['Article 3(1): GPAI Definition', 'Article 53: GPAI Provider Obligations'],
-      obligations: [
-        'Technical Documentation',
-        'Copyright Protection Policy',
-        'Transparency Requirements',
-        'Systemic Risk Assessment',
-      ],
+      obligations: getObligationsForRoles('GPAI', input.role),
       reasoning: `GPAI: System qualifies as General Purpose AI. Provider obligations under Article 53 apply.`,
     };
   }
@@ -347,12 +532,7 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
         annex1Matches: [],
         annex3Matches: [],
         applicableArticles: ['Article 6: Classification', 'Article 9-16: High-Risk Obligations'],
-        obligations: [
-          'Risk Management System',
-          'Data Governance',
-          'Technical Documentation',
-          'Human Oversight',
-        ],
+        obligations: getObligationsForRoles('HIGH_RISK', input.role),
         riskScore,
         reasoning: `HIGH RISK (Organizational Assessment): Risk score ${riskScore}/25 indicates high organizational risk.`,
       };
@@ -365,11 +545,7 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
         annex1Matches: [],
         annex3Matches: [],
         applicableArticles: ['Article 50: Limited Risk Requirements'],
-        obligations: [
-          'Transparency to users',
-          'Documentation',
-          'Monitoring',
-        ],
+        obligations: getObligationsForRoles('LIMITED_RISK', input.role),
         riskScore,
         reasoning: `LIMITED RISK (Organizational Assessment): Risk score ${riskScore}/25 indicates limited organizational risk.`,
       };

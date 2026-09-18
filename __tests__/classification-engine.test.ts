@@ -11,7 +11,8 @@ describe('Classification Engine', () => {
   vulnerableGroups: [],
   fundamentalRightsImpact: false,
   crossBorderImpact: false,
-}; 
+  role: ['provider'],
+};
 
   describe('Input Validation', () => {
     test('should throw error if systemName is empty', () => {
@@ -32,6 +33,16 @@ describe('Classification Engine', () => {
     test('should throw error if geographies array is empty', () => {
       const invalidInput = { ...validInput, geographies: [] };
       expect(() => classifyAISystem(invalidInput)).toThrow('Validation failed');
+    });
+
+    test('should throw error if role array is empty', () => {
+      const invalidInput = { ...validInput, role: [] };
+      expect(() => classifyAISystem(invalidInput)).toThrow('Validation failed');
+    });
+
+    test('should throw error if role is missing', () => {
+      const { role, ...rest } = validInput;
+      expect(() => classifyAISystem(rest as AssessmentInput)).toThrow('Validation failed');
     });
   });
 
@@ -240,6 +251,122 @@ describe('Classification Engine', () => {
       const result2 = classifyAISystem(input2);
 
       expect(result1.classification).toBe(result2.classification);
+    });
+  });
+
+  describe('Article 6(3) Exemption', () => {
+    const annexIIIInput: AssessmentInput = {
+      ...validInput,
+      systemName: 'Recruitment Screener',
+      description: 'Automated recruitment platform for CV screening of job candidates',
+    };
+
+    test('should downgrade to LIMITED_RISK when an exemption condition is met and no significant risk of harm', () => {
+      const input: AssessmentInput = {
+        ...annexIIIInput,
+        performsNarrowProceduralTask: true,
+        significantRiskOfHarm: false,
+      };
+      const result = classifyAISystem(input);
+      expect(result.classification).toBe('LIMITED_RISK');
+      expect(result.exemptionApplied).toBe(true);
+      expect(result.obligations.some(o => o.toLowerCase().includes('document'))).toBe(true);
+      expect(result.obligations.some(o => o.toLowerCase().includes('register'))).toBe(true);
+    });
+
+    test('should stay HIGH_RISK when an exemption condition is met but there is significant risk of harm', () => {
+      const input: AssessmentInput = {
+        ...annexIIIInput,
+        performsNarrowProceduralTask: true,
+        significantRiskOfHarm: true,
+      };
+      const result = classifyAISystem(input);
+      expect(result.classification).toBe('HIGH_RISK');
+      expect(result.exemptionApplied).toBe(false);
+      expect(result.reasoning.toLowerCase()).toContain('rejected');
+    });
+
+    test('should stay HIGH_RISK when no exemption condition is met', () => {
+      const result = classifyAISystem(annexIIIInput);
+      expect(result.classification).toBe('HIGH_RISK');
+      expect(result.exemptionApplied).toBe(false);
+    });
+  });
+
+  describe('Role-Based Obligations', () => {
+    const annexIIIInput: AssessmentInput = {
+      ...validInput,
+      systemName: 'Recruitment Screener',
+      description: 'Automated recruitment platform for CV screening of job candidates',
+    };
+
+    test('should produce different obligations for provider vs deployer', () => {
+      const providerResult = classifyAISystem({ ...annexIIIInput, role: ['provider'] });
+      const deployerResult = classifyAISystem({ ...annexIIIInput, role: ['deployer'] });
+
+      expect(providerResult.classification).toBe('HIGH_RISK');
+      expect(deployerResult.classification).toBe('HIGH_RISK');
+      expect(providerResult.obligations).not.toEqual(deployerResult.obligations);
+    });
+
+    test('should union obligations without duplicates for multiple roles', () => {
+      const providerResult = classifyAISystem({ ...annexIIIInput, role: ['provider'] });
+      const deployerResult = classifyAISystem({ ...annexIIIInput, role: ['deployer'] });
+      const combinedResult = classifyAISystem({ ...annexIIIInput, role: ['provider', 'deployer'] });
+
+      const expectedUnion = new Set([...providerResult.obligations, ...deployerResult.obligations]);
+      expect(new Set(combinedResult.obligations)).toEqual(expectedUnion);
+      expect(new Set(combinedResult.obligations).size).toBe(combinedResult.obligations.length);
+    });
+  });
+
+  describe('GPAI Systemic Risk', () => {
+    const gpaiInput: AssessmentInput = {
+      ...validInput,
+      systemName: 'Large Language Model',
+      description: 'General purpose language model',
+    };
+
+    test('should classify as systemic risk when training compute meets the Article 51 threshold', () => {
+      const result = classifyAISystem({ ...gpaiInput, gpaiTrainingComputeFLOPs: 2e25 });
+      expect(result.classification).toBe('GPAI');
+      expect(result.applicableArticles).toContain('Article 51: Systemic Risk Classification');
+      expect(result.applicableArticles).toContain('Article 55: Systemic Risk Obligations');
+    });
+
+    test('should classify as systemic risk on Commission designation regardless of compute', () => {
+      const result = classifyAISystem({ ...gpaiInput, gpaiSystemicRiskDesignation: true });
+      expect(result.classification).toBe('GPAI');
+      expect(result.applicableArticles).toContain('Article 51: Systemic Risk Classification');
+    });
+
+    test('should stay standard GPAI when below the compute threshold', () => {
+      const result = classifyAISystem({ ...gpaiInput, gpaiTrainingComputeFLOPs: 1e20 });
+      expect(result.classification).toBe('GPAI');
+      expect(result.applicableArticles).not.toContain('Article 51: Systemic Risk Classification');
+    });
+
+    test('should stay standard GPAI when no systemic-risk fields are provided', () => {
+      const result = classifyAISystem(gpaiInput);
+      expect(result.classification).toBe('GPAI');
+      expect(result.applicableArticles).not.toContain('Article 51: Systemic Risk Classification');
+    });
+  });
+
+  describe('Combined Annex III + Article 50 Matching', () => {
+    test('should return a single HIGH_RISK result combining Annex III and Article 50 obligations', () => {
+      const input: AssessmentInput = {
+        ...validInput,
+        systemName: 'Recruitment Chatbot',
+        description: 'AI recruitment chatbot for screening job candidates',
+      };
+      const result = classifyAISystem(input);
+
+      expect(result.classification).toBe('HIGH_RISK');
+      expect(result.applicableArticles).toContain('Article 9-16: High-Risk Obligations');
+      expect(result.applicableArticles).toContain('Article 50: Transparency Obligations');
+      expect(result.obligations.some(o => o.includes('Article 9'))).toBe(true);
+      expect(result.obligations.some(o => o.includes('Article 50'))).toBe(true);
     });
   });
 });

@@ -13,13 +13,13 @@ import {
 
 type ResponseData = any;
 
-export default function handler(
+export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<ResponseData>
 ) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ 
-      error: 'Method not allowed. Use GET.' 
+    return res.status(405).json({
+      error: 'Method not allowed. Use GET.'
     });
   }
 
@@ -28,17 +28,17 @@ export default function handler(
 
     switch (action) {
       case 'all':
-        return res.status(200).json(readAllAssessments());
+        return res.status(200).json(await readAllAssessments());
 
       case 'latest':
         const limitNum = limit ? parseInt(limit as string, 10) : 20;
-        return res.status(200).json(getLatestAssessments(limitNum));
+        return res.status(200).json(await getLatestAssessments(limitNum));
 
       case 'by-id':
         if (!id) {
           return res.status(400).json({ error: 'ID parameter is required' });
         }
-        const assessment = getAssessmentById(id as string);
+        const assessment = await getAssessmentById(id as string);
         if (!assessment) {
           return res.status(404).json({ error: 'Assessment not found' });
         }
@@ -48,25 +48,25 @@ export default function handler(
         if (!query) {
           return res.status(400).json({ error: 'Query parameter is required' });
         }
-        return res.status(200).json(searchAssessments(query as string));
+        return res.status(200).json(await searchAssessments(query as string));
 
       case 'stats':
-        return res.status(200).json(getStatistics());
+        return res.status(200).json(await getStatistics());
 
       case 'export':
         const exportFormat = format || 'json';
         if (exportFormat === 'csv') {
           res.setHeader('Content-Type', 'text/csv');
           res.setHeader('Content-Disposition', 'attachment; filename="assessments.csv"');
-          return res.status(200).send(exportAsCSV());
+          return res.status(200).send(await exportAsCSV());
         } else {
           res.setHeader('Content-Type', 'application/json');
           res.setHeader('Content-Disposition', 'attachment; filename="assessments.json"');
-          return res.status(200).send(exportAsJSON());
+          return res.status(200).send(await exportAsJSON());
         }
 
       case 'log-stats':
-        return res.status(200).json(getLogStats());
+        return res.status(200).json(await getLogStats());
 
       default:
         return res.status(400).json({ 

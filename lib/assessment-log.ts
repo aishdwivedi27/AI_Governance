@@ -1,10 +1,7 @@
 // lib/assessment-log.ts
-import fs from 'fs';
-import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { getRulesVersion } from './classification-engine';
-
-const LOG_FILE = path.join(process.cwd(), 'data', 'assessments.jsonl');
+import { prisma } from './prisma';
 
 export interface AssessmentRecord {
   id: string;
@@ -29,99 +26,114 @@ export interface AssessmentRecord {
   };
 }
 
-/**
- * Append assessment to immutable log
- * IMPORTANT: Never delete or modify entries
- * Each entry is immutable once written
- */
-export function appendAssessment(assessment: Omit<AssessmentRecord, 'id' | 'timestamp' | 'rulesVersion'>): AssessmentRecord {
-  // Ensure data directory exists
-  const dataDir = path.dirname(LOG_FILE);
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
+interface AssessmentRow {
+  id: string;
+  timestamp: Date;
+  systemName: string;
+  description: string;
+  classification: string;
+  confidenceScore: number;
+  evidenceStrength: number;
+  violations: unknown;
+  highRiskMatches: unknown;
+  applicableArticles: string[];
+  obligations: string[];
+  riskScore: number | null;
+  reasoning: string;
+  rulesVersion: string;
+  metadata: unknown;
+}
 
-  // Create immutable record
-  const record: AssessmentRecord = {
-    ...assessment,
-    id: uuidv4(),
-    timestamp: new Date().toISOString(),
-    rulesVersion: getRulesVersion(),
+function mapRecord(row: AssessmentRow): AssessmentRecord {
+  return {
+    id: row.id,
+    timestamp: row.timestamp.toISOString(),
+    systemName: row.systemName,
+    description: row.description,
+    classification: row.classification,
+    confidenceScore: row.confidenceScore,
+    evidenceStrength: row.evidenceStrength,
+    violations: row.violations as any[],
+    highRiskMatches: row.highRiskMatches as any[],
+    applicableArticles: row.applicableArticles,
+    obligations: row.obligations,
+    riskScore: row.riskScore ?? undefined,
+    reasoning: row.reasoning,
+    rulesVersion: row.rulesVersion,
+    metadata: row.metadata as AssessmentRecord['metadata'],
   };
-
-  // Append to log (never overwrite)
-  const jsonLine = JSON.stringify(record) + '\n';
-  fs.appendFileSync(LOG_FILE, jsonLine, 'utf-8');
-
-  return record;
 }
 
 /**
- * Read all assessments from immutable log
- * Returns in order (oldest first)
- * Skips malformed JSON lines gracefully
+ * Append assessment to the immutable log
+ * IMPORTANT: Never delete or modify entries
+ * Each entry is immutable once written
  */
-export function readAllAssessments(): AssessmentRecord[] {
-  if (!fs.existsSync(LOG_FILE)) {
-    return [];
-  }
+export async function appendAssessment(
+  assessment: Omit<AssessmentRecord, 'id' | 'timestamp' | 'rulesVersion'>
+): Promise<AssessmentRecord> {
+  const row = await prisma.assessment.create({
+    data: {
+      ...assessment,
+      id: uuidv4(),
+      timestamp: new Date(),
+      rulesVersion: getRulesVersion(),
+    },
+  });
 
-  const content = fs.readFileSync(LOG_FILE, 'utf-8');
-  return content
-    .trim()
-    .split('\n')
-    .filter(line => line.trim())
-    .map(line => {
-      try {
-        return JSON.parse(line);
-      } catch (e) {
-        console.error('Error parsing assessment line:', e);
-        return null;
-      }
-    })
-    .filter((item): item is AssessmentRecord => item !== null);
+  return mapRecord(row);
+}
+
+/**
+ * Read all assessments from the log
+ * Returns in order (oldest first)
+ */
+export async function readAllAssessments(): Promise<AssessmentRecord[]> {
+  const rows = await prisma.assessment.findMany({ orderBy: { timestamp: 'asc' } });
+  return rows.map(mapRecord);
 }
 
 /**
  * Get single assessment by ID
  */
-export function getAssessmentById(id: string): AssessmentRecord | null {
-  const all = readAllAssessments();
-  const assessment = all.find(a => a.id === id);
-  return assessment || null;
+export async function getAssessmentById(id: string): Promise<AssessmentRecord | null> {
+  const row = await prisma.assessment.findUnique({ where: { id } });
+  return row ? mapRecord(row) : null;
 }
 
 /**
- * Get latest assessments
+ * Get latest assessments (most recent first)
  */
-export function getLatestAssessments(limit: number = 20): AssessmentRecord[] {
-  const all = readAllAssessments();
-  return all.slice(-limit).reverse(); // Most recent first
+export async function getLatestAssessments(limit: number = 20): Promise<AssessmentRecord[]> {
+  const rows = await prisma.assessment.findMany({
+    orderBy: { timestamp: 'desc' },
+    take: limit,
+  });
+  return rows.map(mapRecord);
 }
 
 /**
  * Search assessments by system name, classification, or description
- * Handles undefined or missing description fields gracefully
  */
-export function searchAssessments(query: string): AssessmentRecord[] {
-  const all = readAllAssessments();
-  const lowerQuery = query.toLowerCase();
-  
-  return all.filter(a => 
-    a.systemName.toLowerCase().includes(lowerQuery) ||
-    a.classification.toLowerCase().includes(lowerQuery) ||
-    (a.description && a.description.toLowerCase().includes(lowerQuery))
-  );
+export async function searchAssessments(query: string): Promise<AssessmentRecord[]> {
+  const rows = await prisma.assessment.findMany({
+    where: {
+      OR: [
+        { systemName: { contains: query, mode: 'insensitive' } },
+        { classification: { contains: query, mode: 'insensitive' } },
+        { description: { contains: query, mode: 'insensitive' } },
+      ],
+    },
+  });
+  return rows.map(mapRecord);
 }
 
 /**
  * Get statistics
  */
-export function getStatistics() {
-  const assessments = readAllAssessments();
-  
+export async function getStatistics() {
   const stats = {
-    totalAssessments: assessments.length,
+    totalAssessments: 0,
     byClassification: {
       UNACCEPTABLE_RISK: 0,
       HIGH_RISK: 0,
@@ -134,22 +146,31 @@ export function getStatistics() {
     lastAssessment: null as AssessmentRecord | null,
   };
 
-  let totalConfidence = 0;
-  let totalEvidence = 0;
+  const [total, avg, grouped, last] = await Promise.all([
+    prisma.assessment.count(),
+    prisma.assessment.aggregate({
+      _avg: { confidenceScore: true, evidenceStrength: true },
+    }),
+    prisma.assessment.groupBy({
+      by: ['classification'],
+      _count: { _all: true },
+    }),
+    prisma.assessment.findFirst({ orderBy: { timestamp: 'desc' } }),
+  ]);
 
-  for (const assessment of assessments) {
-    const classification = assessment.classification as keyof typeof stats.byClassification;
+  stats.totalAssessments = total;
+
+  for (const group of grouped) {
+    const classification = group.classification as keyof typeof stats.byClassification;
     if (classification in stats.byClassification) {
-      stats.byClassification[classification]++;
+      stats.byClassification[classification] = group._count._all;
     }
-    totalConfidence += assessment.confidenceScore;
-    totalEvidence += assessment.evidenceStrength;
   }
 
-  if (assessments.length > 0) {
-    stats.averageConfidence = Math.round(totalConfidence / assessments.length);
-    stats.averageEvidence = Math.round(totalEvidence / assessments.length);
-    stats.lastAssessment = assessments[assessments.length - 1];
+  if (total > 0) {
+    stats.averageConfidence = Math.round(avg._avg.confidenceScore ?? 0);
+    stats.averageEvidence = Math.round(avg._avg.evidenceStrength ?? 0);
+    stats.lastAssessment = last ? mapRecord(last) : null;
   }
 
   return stats;
@@ -158,17 +179,17 @@ export function getStatistics() {
 /**
  * Export assessment history as JSON
  */
-export function exportAsJSON(): string {
-  const assessments = readAllAssessments();
+export async function exportAsJSON(): Promise<string> {
+  const assessments = await readAllAssessments();
   return JSON.stringify(assessments, null, 2);
 }
 
 /**
  * Export assessment history as CSV
  */
-export function exportAsCSV(): string {
-  const assessments = readAllAssessments();
-  
+export async function exportAsCSV(): Promise<string> {
+  const assessments = await readAllAssessments();
+
   if (assessments.length === 0) {
     return '';
   }
@@ -201,28 +222,30 @@ export function exportAsCSV(): string {
 }
 
 /**
- * Get file size and stats
+ * Get storage stats. Unlike the old file-based log, "file size" has no
+ * meaning for a database, so this reports entry count and the earliest/
+ * latest assessment timestamps instead.
  */
-export function getLogStats() {
-  if (!fs.existsSync(LOG_FILE)) {
+export async function getLogStats() {
+  const [entriesCount, first, last] = await Promise.all([
+    prisma.assessment.count(),
+    prisma.assessment.findFirst({ orderBy: { timestamp: 'asc' } }),
+    prisma.assessment.findFirst({ orderBy: { timestamp: 'desc' } }),
+  ]);
+
+  if (entriesCount === 0) {
     return {
-      filePath: LOG_FILE,
-      fileSize: 0,
-      fileSize_MB: '0.00',
+      storageType: 'postgresql',
       entriesCount: 0,
       createdAt: null,
+      lastModified: null,
     };
   }
 
-  const stats = fs.statSync(LOG_FILE);
-  const entries = readAllAssessments();
-
   return {
-    filePath: LOG_FILE,
-    fileSize: stats.size,
-    fileSize_MB: (stats.size / 1024 / 1024).toFixed(2),
-    entriesCount: entries.length,
-    createdAt: stats.birthtime,
-    lastModified: stats.mtime,
+    storageType: 'postgresql',
+    entriesCount,
+    createdAt: first ? first.timestamp.toISOString() : null,
+    lastModified: last ? last.timestamp.toISOString() : null,
   };
 }

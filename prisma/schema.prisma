@@ -1,0 +1,97 @@
+// Prisma schema for the EU AI Act Governance Platform.
+// Datasource is Supabase Postgres, reached via a pooled runtime connection
+// (DATABASE_URL) and a direct connection used only for migrations (DIRECT_URL) -
+// see DEPLOYMENT.md for why both are required with Supabase's connection pooler.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Assessment is the only model with real application logic in this phase -
+// it replaces the JSONL log in lib/assessment-log.ts field-for-field.
+model Assessment {
+  id                String   @id
+  timestamp         DateTime
+  systemName        String
+  description       String
+  classification    String
+  confidenceScore    Float
+  evidenceStrength   Float
+  violations        Json
+  highRiskMatches   Json
+  applicableArticles String[]
+  obligations       String[]
+  riskScore         Float?
+  reasoning         String   @db.Text
+  rulesVersion      String
+  metadata          Json
+
+  // No auth yet (Phase 3) - always null until a real session exists.
+  createdByUserId String?
+
+  checklistItems ChecklistItem[]
+
+  @@index([timestamp])
+  @@index([classification])
+}
+
+// Schema only below this point - no application code reads/writes these yet.
+// Field shapes are taken directly from ACTION_PLAN.md items 12, 16, 17, 18 so
+// the later phases that own this logic don't need a follow-up migration.
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  passwordHash    String
+  isSeedUser      Boolean  @default(false)
+  createdByUserId String?
+  createdBy       User?    @relation("UserCreatedBy", fields: [createdByUserId], references: [id])
+  createdUsers    User[]   @relation("UserCreatedBy")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model QaSession {
+  id           String   @id @default(uuid())
+  actorId      String?
+  answers      Json
+  currentStep  String
+  llmExchange  Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ChecklistItem {
+  id                String     @id @default(uuid())
+  assessmentId      String
+  assessment        Assessment @relation(fields: [assessmentId], references: [id])
+  obligationArticle String
+  title             String
+  description       String
+  requiredArtifact  String
+  status            String
+  owner             String?
+  evidenceLink      String?
+  lastUpdated       DateTime   @default(now())
+
+  @@index([assessmentId])
+}
+
+model AuditEvent {
+  id            String   @id @default(uuid())
+  entityType    String
+  entityId      String
+  actorId       String?
+  action        String
+  previousValue Json?
+  newValue      Json?
+  timestamp     DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
