@@ -91,9 +91,49 @@ npx ts-node --compiler-options "{\"module\":\"commonjs\",\"moduleResolution\":\"
 
 If the second process (which shares no memory or filesystem state with the first) reads the record back, persistence is confirmed independent of any single process/host instance. Delete both temporary scripts and the smoke-test row afterward.
 
+## Auth setup
+
+The app is guarded by a seed-user-administered login: one pre-provisioned
+seed user can create other users and reset anyone's password; there is no
+self-service password change or "forgot password" flow (no SMTP in this
+MVP), so non-seed users receive their credentials out of band from the
+admin.
+
+### 1. Generate a session secret
+
+```
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Set the result as `SESSION_SECRET` in `.env.local` (and `.env`, locally).
+Rotating this value invalidates all existing sessions.
+
+### 2. Set seed user credentials
+
+Set `SEED_USER_EMAIL` / `SEED_USER_PASSWORD` in `.env.local` (local) or the
+host's environment variable settings (deployed) - never commit real values.
+
+### 3. Run the bootstrap script
+
+```
+npm run seed:user
+```
+
+Safe to re-run - it upserts by email, so re-running after changing
+`SEED_USER_PASSWORD` rotates the seed user's password.
+
+### 4. Log in and rotate the seed password
+
+Log in at `/login` with the seed credentials, then use `/admin/users` (seed
+user only) to reset that same account's password to a value that isn't
+sitting in any env file history.
+
 ## Required environment variables
 
 | Variable | Used by | Notes |
 |---|---|---|
 | `DATABASE_URL` | App runtime | Supabase pooled connection string (port 6543, `pgbouncer=true`) |
 | `DIRECT_URL` | `prisma migrate` | Supabase direct connection string (port 5432) |
+| `SEED_USER_EMAIL` | `npm run seed:user` (bootstrap only) | Not read by the running app |
+| `SEED_USER_PASSWORD` | `npm run seed:user` (bootstrap only) | Rotate after first login |
+| `SESSION_SECRET` | App runtime (`lib/auth.ts`) | HMAC key for session cookies; rotating invalidates all sessions |

@@ -10,6 +10,7 @@ import {
   exportAsCSV,
   getLogStats,
 } from '@/lib/assessment-log';
+import { requireAuth } from '@/lib/auth';
 
 type ResponseData = any;
 
@@ -22,6 +23,9 @@ export default async function handler(
       error: 'Method not allowed. Use GET.'
     });
   }
+
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
   try {
     const { action, id, limit, query, format } = req.query;

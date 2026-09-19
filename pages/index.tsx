@@ -1,6 +1,10 @@
 // pages/index.tsx - CORRECTED VERSION
 import Link from 'next/link';
+import type { GetServerSideProps } from 'next';
 import { Button } from '@/components/ui';
+import { requireAuthSSR } from '@/lib/auth';
+
+export const getServerSideProps: GetServerSideProps = async (ctx) => requireAuthSSR(ctx);
 
 export default function Home() {
   return (

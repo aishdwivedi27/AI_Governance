@@ -1,6 +1,10 @@
 // pages/dashboard.tsx - FIXED VERSION WITH HISTORY DETAILS
 'use client';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
+import type { GetServerSideProps } from 'next';
+import { requireAuthSSR, type AuthedUser } from '@/lib/auth';
 import {
   Card,
   CardContent,
@@ -56,7 +60,10 @@ const classificationStyles: Record<string, any> = {
   },
 };
 
-export default function Dashboard() {
+export const getServerSideProps: GetServerSideProps = async (ctx) => requireAuthSSR(ctx);
+
+export default function Dashboard({ user }: { user: AuthedUser }) {
+  const router = useRouter();
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -222,10 +229,28 @@ export default function Dashboard() {
     }
   };
 
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4">
-        <h1 className="text-4xl font-bold mb-2">EU AI Act Compliance Checker</h1>
+        <div className="flex items-start justify-between mb-2">
+          <h1 className="text-4xl font-bold">EU AI Act Compliance Checker</h1>
+          <div className="flex items-center gap-4 text-sm">
+            <span className="text-gray-600">{user.email}</span>
+            {user.isSeedUser && (
+              <Link href="/admin/users" className="text-blue-700 hover:underline">
+                Manage users
+              </Link>
+            )}
+            <button onClick={handleLogout} className="text-gray-600 hover:text-gray-900 hover:underline">
+              Log out
+            </button>
+          </div>
+        </div>
         <p className="text-gray-600 mb-8">Assess and track AI system risk classifications</p>
 
         {/* Tabs */}

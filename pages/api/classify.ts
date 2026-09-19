@@ -2,6 +2,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { classifyAISystem, AssessmentInput, ClassificationResult } from '@/lib/classification-engine';
 import { appendAssessment } from '@/lib/assessment-log';
+import { requireAuth } from '@/lib/auth';
 
 type ResponseData = 
   | ClassificationResult 
@@ -17,6 +18,9 @@ export default async function handler(
       error: 'Method not allowed. Use POST.'
     });
   }
+
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
   try {
     const input: AssessmentInput = req.body;

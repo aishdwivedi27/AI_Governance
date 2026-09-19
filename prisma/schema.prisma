@@ -51,7 +51,7 @@ model User {
   passwordHash    String
   isSeedUser      Boolean  @default(false)
   createdByUserId String?
-  createdBy       User?    @relation("UserCreatedBy", fields: [createdByUserId], references: [id])
+  createdBy       User?    @relation("UserCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   createdUsers    User[]   @relation("UserCreatedBy")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
