@@ -2,6 +2,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { classifyAISystem, AssessmentInput, ClassificationResult } from '@/lib/classification-engine';
 import { appendAssessment } from '@/lib/assessment-log';
+import { getChecklistForAssessment } from '@/lib/checklist';
+import { sanitizeAnswers } from '@/lib/assessment-flow';
+import { updateQASessionForActor } from '@/lib/qa-sessions';
 import { requireAuth } from '@/lib/auth';
 
 type ResponseData = 
@@ -35,6 +38,9 @@ export default async function handler(
     // Classify the AI system
     const classificationResult = classifyAISystem(input);
 
+    // Immutable snapshot of what was submitted (known keys only), for history and the PDF
+    const answers = sanitizeAnswers(req.body);
+
     // Store in assessment log
     const assessment = await appendAssessment({
       systemName: input.systemName,
@@ -57,13 +63,29 @@ export default async function handler(
         fundamentalRightsImpact: input.fundamentalRightsImpact,
         crossBorderImpact: input.crossBorderImpact,
       },
-    });
+    }, { actorId: user.id, checklistDrafts: classificationResult.checklist, answers });
+
+    // Best effort: mark the draft this assessment came from as submitted
+    const { sessionId } = req.body as { sessionId?: unknown };
+    if (typeof sessionId === 'string') {
+      try {
+        await updateQASessionForActor(sessionId, user.id, {
+          answers: answers as Record<string, unknown>,
+          currentStep: 'submitted',
+        });
+      } catch (sessionError) {
+        console.error('Could not mark session as submitted:', sessionError);
+      }
+    }
+
+    const checklist = await getChecklistForAssessment(assessment.id);
 
     return res.status(200).json({
       success: true,
       assessment: {
         ...classificationResult,
         assessmentId: assessment.id,
+        checklist,
       },
     });
   } catch (error) {

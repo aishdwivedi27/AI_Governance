@@ -1,7 +1,12 @@
 // lib/assessment-log.ts
 import { v4 as uuidv4 } from 'uuid';
+import type { Prisma } from '@prisma/client';
 import { getRulesVersion } from './classification-engine';
 import { prisma } from './prisma';
+import { recordAuditEvent } from './audit-events';
+import { createChecklistItems } from './checklist';
+import type { EvidenceChecklistItemDraft } from './classification-engine';
+import type { WizardAnswers } from './assessment-flow';
 
 export interface AssessmentRecord {
   id: string;
@@ -18,6 +23,9 @@ export interface AssessmentRecord {
   riskScore?: number;
   reasoning: string;
   rulesVersion: string;
+  createdByUserId?: string;
+  /** Submitted wizard answers; absent on records created before the wizard existed. */
+  answers?: WizardAnswers;
   metadata: {
     industry: string;
     geographies: string[];
@@ -41,6 +49,8 @@ interface AssessmentRow {
   riskScore: number | null;
   reasoning: string;
   rulesVersion: string;
+  createdByUserId?: string | null;
+  answers?: unknown;
   metadata: unknown;
 }
 
@@ -60,25 +70,62 @@ function mapRecord(row: AssessmentRow): AssessmentRecord {
     riskScore: row.riskScore ?? undefined,
     reasoning: row.reasoning,
     rulesVersion: row.rulesVersion,
+    createdByUserId: row.createdByUserId ?? undefined,
+    answers: (row.answers as WizardAnswers | null | undefined) ?? undefined,
     metadata: row.metadata as AssessmentRecord['metadata'],
   };
+}
+
+export interface AppendAssessmentOptions {
+  actorId?: string;
+  checklistDrafts?: EvidenceChecklistItemDraft[];
+  /** Submitted wizard answers to snapshot on the record. */
+  answers?: WizardAnswers;
 }
 
 /**
  * Append assessment to the immutable log
  * IMPORTANT: Never delete or modify entries
  * Each entry is immutable once written
+ *
+ * The assessment, its checklist items and the `assessment.submitted` audit
+ * event are written in one transaction so none can exist without the others.
  */
 export async function appendAssessment(
-  assessment: Omit<AssessmentRecord, 'id' | 'timestamp' | 'rulesVersion'>
+  assessment: Omit<AssessmentRecord, 'id' | 'timestamp' | 'rulesVersion' | 'createdByUserId' | 'answers'>,
+  options: AppendAssessmentOptions = {}
 ): Promise<AssessmentRecord> {
-  const row = await prisma.assessment.create({
-    data: {
-      ...assessment,
-      id: uuidv4(),
-      timestamp: new Date(),
-      rulesVersion: getRulesVersion(),
-    },
+  const drafts = options.checklistDrafts ?? [];
+  const rulesVersion = getRulesVersion();
+
+  const row = await prisma.$transaction(async tx => {
+    const created = await tx.assessment.create({
+      data: {
+        ...assessment,
+        id: uuidv4(),
+        timestamp: new Date(),
+        rulesVersion,
+        createdByUserId: options.actorId,
+        ...(options.answers && { answers: options.answers as unknown as Prisma.InputJsonValue }),
+      },
+    });
+
+    await createChecklistItems(tx, created.id, drafts);
+
+    await recordAuditEvent(tx, {
+      entityType: 'assessment',
+      entityId: created.id,
+      actorId: options.actorId ?? null,
+      action: 'assessment.submitted',
+      newValue: {
+        systemName: assessment.systemName,
+        classification: assessment.classification,
+        rulesVersion,
+        checklistItemCount: drafts.length,
+      },
+    });
+
+    return created;
   });
 
   return mapRecord(row);

@@ -32,6 +32,9 @@ model Assessment {
   rulesVersion      String
   metadata          Json
 
+  // Immutable snapshot of the submitted wizard answers (null for records created before the wizard).
+  answers           Json?
+
   // No auth yet (Phase 3) - always null until a real session exists.
   createdByUserId String?
 

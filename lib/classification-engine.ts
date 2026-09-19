@@ -2,6 +2,27 @@
 import fs from 'fs';
 import path from 'path';
 import YAML from 'yaml';
+import { normalizeText, textContainsTrigger } from './text-match';
+import {
+  EXEMPTION_KEYS,
+  PRODUCT_TYPE_IDS,
+  TRI_STATES,
+  getActiveAnnex3Categories,
+  getAnswer,
+  getChallengedAnswers,
+  getScreeningQuestions,
+} from './assessment-flow';
+import type {
+  ChallengedAnswer,
+  ExemptionKey,
+  ProductType,
+  ScreeningQuestion,
+  TriState,
+  WizardAnswers,
+  WizardRules,
+} from './assessment-flow';
+
+export type { ExemptionKey, ProductType, TriState, WizardRules };
 
 let cachedRules: any = null;
 
@@ -71,6 +92,18 @@ export interface AssessmentInput {
   // GPAI systemic risk inputs - only meaningful when GPAI triggers
   gpaiTrainingComputeFLOPs?: number;
   gpaiSystemicRiskDesignation?: boolean;
+
+  // Structured wizard answers. When present, each is authoritative for its step and the
+  // keyword matching for that step is skipped; when absent the keyword logic runs unchanged.
+  // 'unsure' is resolved pessimistically (see buildUncertainty).
+  productType?: ProductType;
+  article5Answers?: Record<string, TriState>;
+  annex1Answer?: TriState;
+  annex3Answers?: Record<string, TriState>;
+  exemptionAnswers?: Partial<Record<ExemptionKey, TriState>>;
+  // Written reasons for "No" answers that other evidence contradicts, keyed by question id
+  justifications?: Record<string, string>;
+  generatesOrInteractsWithPeople?: boolean;
 }
 
 export type RiskClassification = 'UNACCEPTABLE_RISK' | 'HIGH_RISK' | 'LIMITED_RISK' | 'GPAI' | 'MINIMAL_RISK';
@@ -89,6 +122,53 @@ export interface AnnexMatch {
   examples?: string[];
 }
 
+export type ChecklistStatus = 'not_started' | 'in_progress' | 'complete' | 'not_applicable';
+
+export const CHECKLIST_STATUSES: readonly ChecklistStatus[] = [
+  'not_started',
+  'in_progress',
+  'complete',
+  'not_applicable',
+];
+
+export interface GovernanceRequirement {
+  role: Role;
+  ownerRole: string;
+  reviewCadence: string;
+  escalationTrigger: string;
+}
+
+export interface EvidenceChecklistItem {
+  id: string;
+  obligationArticle: string;
+  title: string;
+  description: string;
+  requiredArtifact: string;
+  status: ChecklistStatus;
+  owner: string | null;
+  evidenceLink: string | null;
+  lastUpdated: string;
+}
+
+// What the engine derives; id/status/owner/evidenceLink/lastUpdated are set on persistence
+export type EvidenceChecklistItemDraft = Omit<
+  EvidenceChecklistItem,
+  'id' | 'status' | 'owner' | 'evidenceLink' | 'lastUpdated'
+>;
+
+export interface UncertaintyItem {
+  questionId: string;
+  label: string;
+  treatedAs: string;
+}
+
+export interface Uncertainty {
+  unsureQuestions: UncertaintyItem[];
+  challengedAnswers: ChallengedAnswer[];
+  worstCaseClassification: RiskClassification;
+  note: string;
+}
+
 export interface ClassificationResult {
   classification: RiskClassification;
   confidenceScore: number;
@@ -101,76 +181,11 @@ export interface ClassificationResult {
   riskScore?: number;
   reasoning: string;
   exemptionApplied?: boolean;
+  uncertainty?: Uncertainty;
+  governanceRequirements: GovernanceRequirement[];
+  checklist: EvidenceChecklistItemDraft[];
 }
 
-function normalizeText(text: string): string {
-  return text.toLowerCase().trim();
-}
-
-// Levenshtein distance for fuzzy matching
-function levenshteinDistance(str1: string, str2: string): number {
-  const len1 = str1.length;
-  const len2 = str2.length;
-  const matrix: number[][] = Array(len2 + 1).fill(null).map(() => Array(len1 + 1).fill(0));
-
-  for (let i = 0; i <= len1; i++) matrix[0][i] = i;
-  for (let j = 0; j <= len2; j++) matrix[j][0] = j;
-
-  for (let j = 1; j <= len2; j++) {
-    for (let i = 1; i <= len1; i++) {
-      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-      matrix[j][i] = Math.min(
-        matrix[j][i - 1] + 1,      // insertion
-        matrix[j - 1][i] + 1,      // deletion
-        matrix[j - 1][i - 1] + cost // substitution
-      );
-    }
-  }
-
-  return matrix[len2][len1];
-}
-
-// Check if word contains trigger with fuzzy matching (allows typos)
-function wordContainsTriggerFuzzy(word: string, trigger: string, maxDistance: number = 3): boolean {
-  const normalized = normalizeText(word);
-  const normalizedTrigger = normalizeText(trigger);
-
-  // Exact match first (fastest)
-  if (normalized.includes(normalizedTrigger)) return true;
-
-  // Split into words and check each word/phrase
-  const words = normalized.split(/\s+/);
-  const triggerWords = normalizedTrigger.split(/\s+/);
-
-  // For single-word triggers, check fuzzy match against all words
-  if (triggerWords.length === 1) {
-    for (const word of words) {
-      const distance = levenshteinDistance(word, normalizedTrigger);
-      const similarity = 1 - (distance / Math.max(word.length, normalizedTrigger.length));
-      if (similarity >= 0.8 || distance <= maxDistance) {
-        return true;
-      }
-    }
-  }
-
-  // For multi-word triggers, check if all trigger words appear (fuzzy)
-  let matchedWords = 0;
-  for (const triggerWord of triggerWords) {
-    for (const word of words) {
-      const distance = levenshteinDistance(word, triggerWord);
-      if (distance <= maxDistance || (1 - (distance / Math.max(word.length, triggerWord.length))) >= 0.8) {
-        matchedWords++;
-        break;
-      }
-    }
-  }
-
-  return matchedWords === triggerWords.length;
-}
-
-function textContainsTrigger(text: string, trigger: string): boolean {
-  return wordContainsTriggerFuzzy(text, trigger);
-}
 
 type ObligationTier = 'HIGH_RISK' | 'LIMITED_RISK' | 'GPAI' | 'GPAI_SYSTEMIC';
 
@@ -288,7 +303,274 @@ function getObligationsForRoles(tier: ObligationTier, roles: Role[]): string[] {
   return result;
 }
 
+const GOVERNANCE_BY_ROLE: Record<Role, Omit<GovernanceRequirement, 'role'>> = {
+  provider: {
+    ownerRole: 'Head of AI Compliance',
+    reviewCadence: 'Quarterly',
+    escalationTrigger: 'Any serious incident, substantial modification, or failed conformity check',
+  },
+  deployer: {
+    ownerRole: 'Business System Owner',
+    reviewCadence: 'Quarterly',
+    escalationTrigger: 'Operation outside provider instructions, or an incident affecting individuals',
+  },
+  importer: {
+    ownerRole: 'Regulatory Affairs Lead',
+    reviewCadence: 'Per shipment and annually',
+    escalationTrigger: 'Missing CE marking or documentation, or suspected non-conformity',
+  },
+  distributor: {
+    ownerRole: 'Regulatory Affairs Lead',
+    reviewCadence: 'Per shipment and annually',
+    escalationTrigger: 'Missing CE marking or documentation, or suspected non-conformity',
+  },
+  product_manufacturer: {
+    ownerRole: 'Head of Product Compliance',
+    reviewCadence: 'Quarterly',
+    escalationTrigger: 'Any serious incident or change to the AI component of the product',
+  },
+};
+
+// Stricter cadence/escalation by classification; minimal-risk needs only light review.
+const GOVERNANCE_BY_CLASSIFICATION: Record<
+  RiskClassification,
+  { reviewCadence?: string; escalationTrigger?: string }
+> = {
+  UNACCEPTABLE_RISK: {
+    reviewCadence: 'Immediate',
+    escalationTrigger: 'Any use or deployment of the system - prohibited under Article 5',
+  },
+  HIGH_RISK: { reviewCadence: 'Quarterly' },
+  GPAI: { reviewCadence: 'Quarterly' },
+  LIMITED_RISK: { reviewCadence: 'Semi-annually' },
+  MINIMAL_RISK: {
+    reviewCadence: 'Annually',
+    escalationTrigger: 'Change in intended purpose that could alter the classification',
+  },
+};
+
+export function getGovernanceRequirements(
+  classification: RiskClassification,
+  roles: Role[]
+): GovernanceRequirement[] {
+  const overrides = GOVERNANCE_BY_CLASSIFICATION[classification];
+  return roles.map(role => ({ role, ...GOVERNANCE_BY_ROLE[role], ...overrides }));
+}
+
+const ARTIFACT_BY_ARTICLE: Record<string, string> = {
+  '9': 'Risk management file',
+  '10': 'Data governance and data quality records',
+  '11': 'Technical documentation file',
+  '12': 'Logging specification and sample logs',
+  '13': 'Instructions for use',
+  '14': 'Human oversight procedure',
+  '15': 'Accuracy and robustness test report',
+  '16': 'Quality management system documentation',
+  '23': 'Importer verification record',
+  '24': 'Distributor verification record',
+  '26': 'Deployer operating procedure and monitoring logs',
+  '50': 'Transparency notice or AI-disclosure evidence',
+  '53': 'GPAI technical documentation and copyright policy',
+  '55': 'Systemic risk evaluation and mitigation report',
+};
+
+const DEFAULT_ARTIFACT = 'Evidence of compliance';
+
+// "Article 25(3): Treated as Provider - Article 9: Risk Management System" -> inner article 9
+// "Article 26: Monitor Operation and Retain Logs" -> article 26
+// Anything without an "Article" prefix -> 'General'
+export function parseObligation(obligation: string): { article: string; number: string | null } {
+  const matches = Array.from(obligation.matchAll(/Article (\d+(?:\([0-9a-z]+\))?)/g));
+  if (matches.length === 0) return { article: 'General', number: null };
+  const last = matches[matches.length - 1];
+  return { article: `Article ${last[1]}`, number: last[1].replace(/\(.*\)$/, '') };
+}
+
+export function buildChecklistDrafts(obligations: string[]): EvidenceChecklistItemDraft[] {
+  return obligations.map(obligation => {
+    const { article, number } = parseObligation(obligation);
+    return {
+      obligationArticle: article,
+      title: obligation,
+      description: `Provide evidence that this obligation is met: ${obligation}`,
+      requiredArtifact: (number && ARTIFACT_BY_ARTICLE[number]) || DEFAULT_ARTIFACT,
+    };
+  });
+}
+
+type CoreResult = Omit<ClassificationResult, 'governanceRequirements' | 'checklist'>;
+
+const SEVERITY: Record<RiskClassification, number> = {
+  MINIMAL_RISK: 0,
+  LIMITED_RISK: 1,
+  GPAI: 1,
+  HIGH_RISK: 2,
+  UNACCEPTABLE_RISK: 3,
+};
+
+function treatedAs(q: ScreeningQuestion): string {
+  if (q.id.startsWith('article5.')) {
+    return 'Not treated as a violation, but a prohibited practice cannot be ruled out. Legal review is required before any deployment.';
+  }
+  if (q.id === 'annex1') return 'Treated as a safety component of a regulated product (high risk).';
+  if (q.id.startsWith('annex3.')) return 'Treated as applicable, so the system is presumed high-risk.';
+  if (q.id === 'exemption.significantRiskOfHarm') {
+    return 'Treated as a significant risk of harm, so the Article 6(3) exemption does not apply.';
+  }
+  return 'Treated as not met, so the Article 6(3) exemption is not assumed.';
+}
+
+function buildUncertainty(
+  input: AssessmentInput,
+  classification: RiskClassification,
+  rules: WizardRules
+): Uncertainty | undefined {
+  const answers = input as WizardAnswers;
+  const annex3Active = getActiveAnnex3Categories(answers).length > 0;
+
+  const unsure = getScreeningQuestions(rules)
+    .filter(q => getAnswer(answers, q.id) === 'unsure')
+    // Exemption answers are only relevant when an Annex III area applies
+    .filter(q => !q.id.startsWith('exemption.') || annex3Active);
+  const challenged = getChallengedAnswers(answers, rules);
+  if (unsure.length === 0 && challenged.length === 0) return undefined;
+
+  let worst = classification;
+  const consider = (questionId: string) => {
+    const target: RiskClassification = questionId.startsWith('article5.') ? 'UNACCEPTABLE_RISK' : 'HIGH_RISK';
+    if (SEVERITY[target] > SEVERITY[worst]) worst = target;
+  };
+  unsure.forEach(q => consider(q.id));
+  challenged.forEach(c => consider(c.questionId));
+
+  const parts: string[] = [];
+  if (unsure.length) {
+    parts.push(
+      `${unsure.length} answer${unsure.length > 1 ? 's were' : ' was'} "unsure" and treated pessimistically.`
+    );
+  }
+  if (challenged.length) {
+    parts.push(
+      `${challenged.length} "No" answer${challenged.length > 1 ? 's conflict' : ' conflicts'} with other information you provided; the answer${challenged.length > 1 ? 's were' : ' was'} kept but must be evidenced.`
+    );
+  }
+  parts.push(`Worst case if these resolve against you: ${worst.replace(/_/g, ' ')}.`);
+
+  return {
+    unsureQuestions: unsure.map(q => ({ questionId: q.id, label: q.label, treatedAs: treatedAs(q) })),
+    challengedAnswers: challenged,
+    worstCaseClassification: worst,
+    note: parts.join(' '),
+  };
+}
+
+/** Re-derive the uncertainty block for a stored record (answers are stored; the block is not). */
+export function computeUncertainty(
+  answers: WizardAnswers,
+  classification: RiskClassification
+): Uncertainty | undefined {
+  if (classification === 'UNACCEPTABLE_RISK') return undefined;
+  return buildUncertainty(answers as AssessmentInput, classification, getWizardRules());
+}
+
+function uncertaintyChecklist(u: Uncertainty, rules: WizardRules): EvidenceChecklistItemDraft[] {
+  const articleOf = (id: string) => getScreeningQuestions(rules).find(q => q.id === id)?.article ?? 'General';
+  return [
+    ...u.unsureQuestions.map(item => ({
+      obligationArticle: articleOf(item.questionId),
+      title: `Resolve: ${item.label}`,
+      description: `The answer was "unsure" and has been treated pessimistically. Determine the correct answer and record it. ${item.treatedAs}`,
+      requiredArtifact: 'Documented determination with supporting evidence',
+    })),
+    ...u.challengedAnswers.map(c => ({
+      obligationArticle: articleOf(c.questionId),
+      title: `Document evidence supporting "No": ${c.label}`,
+      description: `The answer "No" conflicts with: ${c.signals.join(' ')} ${c.justification ? `Justification given: ${c.justification}` : 'No justification was recorded.'}`,
+      requiredArtifact: 'Written justification with supporting evidence',
+    })),
+  ];
+}
+
 export function classifyAISystem(input: AssessmentInput): ClassificationResult {
+  const core = classifyCore(input);
+  const rules = getWizardRules();
+  const uncertainty =
+    core.classification === 'UNACCEPTABLE_RISK' ? undefined : buildUncertainty(input, core.classification, rules);
+
+  const checklist = buildChecklistDrafts(core.obligations);
+  let confidenceScore = core.confidenceScore;
+  if (uncertainty) {
+    checklist.push(...uncertaintyChecklist(uncertainty, rules));
+    confidenceScore = Math.max(
+      30,
+      confidenceScore - 10 * uncertainty.unsureQuestions.length - 5 * uncertainty.challengedAnswers.length
+    );
+  }
+
+  return {
+    ...core,
+    confidenceScore,
+    ...(uncertainty && { uncertainty }),
+    governanceRequirements: getGovernanceRequirements(core.classification, input.role),
+    checklist,
+  };
+}
+
+function validateStructuredInput(input: AssessmentInput): void {
+  const rules = getWizardRules();
+  const fail = (msg: string): never => {
+    throw new Error(`Validation failed: ${msg}`);
+  };
+  const isTri = (v: unknown) => TRI_STATES.includes(v as TriState);
+  const checkMap = (name: string, value: unknown, allowedIds: string[]) => {
+    if (value === undefined) return;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${name} must be an object`);
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (!allowedIds.includes(k)) fail(`${name} has unknown key "${k}"`);
+      if (!isTri(v)) fail(`${name}.${k} must be yes, no or unsure`);
+    }
+  };
+
+  if (input.productType !== undefined && !PRODUCT_TYPE_IDS.includes(input.productType)) {
+    fail(`unknown productType "${input.productType}"`);
+  }
+  checkMap('article5Answers', input.article5Answers, rules.article5.map(p => p.id));
+  checkMap('annex3Answers', input.annex3Answers, rules.annexIII.map(c => c.id));
+  checkMap('exemptionAnswers', input.exemptionAnswers, [...EXEMPTION_KEYS]);
+  if (input.annex1Answer !== undefined && !isTri(input.annex1Answer)) fail('annex1Answer must be yes, no or unsure');
+  if (input.justifications !== undefined) {
+    if (typeof input.justifications !== 'object' || input.justifications === null) fail('justifications must be an object');
+    for (const v of Object.values(input.justifications)) {
+      if (typeof v !== 'string') fail('justifications values must be strings');
+    }
+  }
+}
+
+export function getWizardRules(): WizardRules {
+  const rules = loadRules();
+  return {
+    article5: (rules.article_5?.prohibited_practices ?? []).map((p: any) => ({
+      id: p.id,
+      article: p.article,
+      name: p.name,
+      description: p.description,
+      triggers: p.triggers ?? [],
+    })),
+    annexI: { examples: rules.annex_i?.examples ?? [], triggers: rules.annex_i?.triggers ?? [] },
+    annexIII: (rules.annex_iii?.categories ?? []).map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      examples: c.examples ?? [],
+      triggers: c.triggers ?? [],
+    })),
+    exemptionConditions: (rules.article_6_3_exemption?.exemption_conditions ?? []).map((c: any) => ({
+      id: c.id,
+      description: c.description,
+    })),
+  };
+}
+
+function classifyCore(input: AssessmentInput): CoreResult {
   // Basic validation
   if (!input.systemName?.trim()) {
     throw new Error('Validation failed: System name is required');
@@ -306,6 +588,8 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
     throw new Error('Validation failed: At least one role must be selected');
   }
 
+  validateStructuredInput(input);
+
   const rules = loadRules();
   const combinedText = `${input.systemName} ${input.description} ${input.industry}`;
 
@@ -313,7 +597,18 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
     const violations: Violation[] = [];
     const article5 = rules.article_5;
 
-    if (article5?.prohibited_practices) {
+    if (input.article5Answers) {
+      for (const prohibition of article5?.prohibited_practices ?? []) {
+        if (input.article5Answers[prohibition.id] === 'yes') {
+          violations.push({
+            id: prohibition.id,
+            name: prohibition.name,
+            article: prohibition.article,
+            description: prohibition.description,
+          });
+        }
+      }
+    } else if (article5?.prohibited_practices) {
       for (const prohibition of article5.prohibited_practices) {
         if (!prohibition.triggers || !Array.isArray(prohibition.triggers)) continue;
         
@@ -350,7 +645,13 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
   const annex1Matches: AnnexMatch[] = [];
   const annexI = rules.annex_i;
   
-  if (annexI?.triggers && Array.isArray(annexI.triggers)) {
+  if (input.annex1Answer !== undefined) {
+    if (input.annex1Answer === 'yes') {
+      annex1Matches.push({ example: 'Safety component of a regulated product (confirmed)' });
+    } else if (input.annex1Answer === 'unsure') {
+      annex1Matches.push({ example: 'Possible safety component of a regulated product (unconfirmed, treated as matched)' });
+    }
+  } else if (annexI?.triggers && Array.isArray(annexI.triggers)) {
     for (const trigger of annexI.triggers) {
       if (textContainsTrigger(combinedText, trigger)) {
         annex1Matches.push({ example: trigger });
@@ -376,7 +677,9 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
   // result when both genuinely apply, instead of only being reachable standalone.
   const article50 = rules.article_50;
   const article50Matches: string[] = [];
-  if (article50?.triggers && Array.isArray(article50.triggers)) {
+  if (input.generatesOrInteractsWithPeople !== undefined) {
+    if (input.generatesOrInteractsWithPeople) article50Matches.push('user-confirmed transparency scenario');
+  } else if (article50?.triggers && Array.isArray(article50.triggers)) {
     for (const trigger of article50.triggers) {
       if (textContainsTrigger(combinedText, trigger)) {
         article50Matches.push(trigger);
@@ -388,7 +691,14 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
   const annex3Matches: AnnexMatch[] = [];
   const annexIII = rules.annex_iii;
 
-  if (annexIII?.categories && Array.isArray(annexIII.categories)) {
+  if (input.annex3Answers) {
+    for (const category of annexIII?.categories ?? []) {
+      const answer = input.annex3Answers[category.id];
+      if (answer === 'yes' || answer === 'unsure') {
+        annex3Matches.push({ id: category.id, name: category.name, examples: category.examples });
+      }
+    }
+  } else if (annexIII?.categories && Array.isArray(annexIII.categories)) {
     for (const category of annexIII.categories) {
       if (!category.triggers || !Array.isArray(category.triggers)) continue;
 
@@ -408,12 +718,22 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
 
   if (annex3Matches.length > 0) {
     // Article 6(3) exemption assessment
-    const exemptionConditionMet =
-      !!input.performsNarrowProceduralTask ||
-      !!input.improvesCompletedHumanActivity ||
-      !!input.detectsPatternsWithoutInfluencingDecisions ||
-      !!input.performsPreparatoryWork;
-    const exemptionApplies = exemptionConditionMet && !input.significantRiskOfHarm;
+    const ex = input.exemptionAnswers;
+    const exemptionConditionMet = ex
+      ? (['procedural_task', 'improve_completed_human_activity', 'pattern_detection', 'preparatory_task'] as const).some(
+          k => ex[k] === 'yes'
+        )
+      : !!input.performsNarrowProceduralTask ||
+        !!input.improvesCompletedHumanActivity ||
+        !!input.detectsPatternsWithoutInfluencingDecisions ||
+        !!input.performsPreparatoryWork;
+    // Unsure about risk of harm is pessimistic: assume there is one.
+    const significantRisk = ex
+      ? ex.significantRiskOfHarm === 'yes' || ex.significantRiskOfHarm === 'unsure'
+      : !!input.significantRiskOfHarm;
+    // An Annex III area the user was unsure about can't be exempted from.
+    const unsureCategory = annex3Matches.some(m => input.annex3Answers?.[m.id!] === 'unsure');
+    const exemptionApplies = exemptionConditionMet && !significantRisk && !unsureCategory;
 
     if (exemptionApplies) {
       return {
@@ -435,7 +755,7 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
     }
 
     let reasoning = `HIGH RISK (Annex III): System matches ${annex3Matches.length} high-risk category(ies): ${annex3Matches.map(m => m.name).join(', ')}. Full compliance obligations apply.`;
-    if (exemptionConditionMet && input.significantRiskOfHarm) {
+    if (exemptionConditionMet && significantRisk) {
       reasoning += ` An Article 6(3) exemption condition was met but was rejected because the system poses a significant risk of harm.`;
     }
 
@@ -479,7 +799,11 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
   }
 
   // STEP 5: GPAI Check
-  if (textContainsTrigger(combinedText, 'general purpose') || textContainsTrigger(combinedText, 'large language')) {
+  const isGpai =
+    input.productType !== undefined
+      ? input.productType === 'gpai'
+      : textContainsTrigger(combinedText, 'general purpose') || textContainsTrigger(combinedText, 'large language');
+  if (isGpai) {
     const isSystemicRisk =
       !!input.gpaiSystemicRiskDesignation ||
       (input.gpaiTrainingComputeFLOPs !== undefined && input.gpaiTrainingComputeFLOPs >= 1e25);
@@ -557,7 +881,7 @@ export function classifyAISystem(input: AssessmentInput): ClassificationResult {
     ? input.riskSeverity * input.riskLikelihood
     : undefined;
 
-  const result: ClassificationResult = {
+  const result: CoreResult = {
     classification: 'MINIMAL_RISK',
     confidenceScore: 50,
     evidenceStrength: 25,

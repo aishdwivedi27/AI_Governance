@@ -18,8 +18,8 @@ jest.mock('../lib/classification-engine', () => ({
 }));
 
 // Mock the Prisma client instead of the filesystem
-jest.mock('../lib/prisma', () => ({
-  prisma: {
+jest.mock('../lib/prisma', () => {
+  const prisma: any = {
     assessment: {
       create: jest.fn(),
       findMany: jest.fn(),
@@ -29,8 +29,12 @@ jest.mock('../lib/prisma', () => ({
       aggregate: jest.fn(),
       groupBy: jest.fn(),
     },
-  },
-}));
+    checklistItem: { createMany: jest.fn() },
+    auditEvent: { create: jest.fn() },
+  };
+  prisma.$transaction = jest.fn((cb: (tx: any) => unknown) => cb(prisma));
+  return { prisma };
+});
 
 const mockPrisma = prisma as unknown as {
   assessment: {
@@ -42,6 +46,9 @@ const mockPrisma = prisma as unknown as {
     aggregate: jest.Mock;
     groupBy: jest.Mock;
   };
+  checklistItem: { createMany: jest.Mock };
+  auditEvent: { create: jest.Mock };
+  $transaction: jest.Mock;
 };
 
 function toRow(record: Partial<Record<string, any>>) {
@@ -130,6 +137,49 @@ describe('Assessment Log', () => {
       expect(result.confidenceScore).toBe(mockAssessment.confidenceScore);
       expect(result.evidenceStrength).toBe(mockAssessment.evidenceStrength);
       expect(result.metadata).toEqual(mockAssessment.metadata);
+    });
+
+    test('writes assessment, checklist items and an audit event in one transaction', async () => {
+      mockPrisma.assessment.create.mockImplementationOnce(({ data }: any) =>
+        Promise.resolve(toRow(data))
+      );
+
+      const drafts = [
+        {
+          obligationArticle: 'Article 9',
+          title: 'Article 9: Risk Management System',
+          description: 'd',
+          requiredArtifact: 'Risk management file',
+        },
+      ];
+      const result = await appendAssessment(mockAssessment, {
+        actorId: 'user-1',
+        checklistDrafts: drafts,
+      });
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.assessment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ createdByUserId: 'user-1' }),
+        })
+      );
+      expect(mockPrisma.checklistItem.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            assessmentId: result.id,
+            obligationArticle: 'Article 9',
+            status: 'not_started',
+          }),
+        ],
+      });
+      expect(mockPrisma.auditEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          entityType: 'assessment',
+          entityId: result.id,
+          actorId: 'user-1',
+          action: 'assessment.submitted',
+        }),
+      });
     });
 
     test('should call prisma.assessment.create with a rules version stamp', async () => {

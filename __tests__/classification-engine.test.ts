@@ -1,5 +1,5 @@
 // __tests__/classification-engine.test.ts
-import { classifyAISystem, getRulesMetadata, getRulesVersion } from '../lib/classification-engine'
+import { classifyAISystem, getRulesMetadata, getRulesVersion, buildChecklistDrafts } from '../lib/classification-engine'
 import type { AssessmentInput, ClassificationResult } from '../lib/classification-engine'
 
 describe('Classification Engine', () => {
@@ -317,6 +317,47 @@ describe('Classification Engine', () => {
       const expectedUnion = new Set([...providerResult.obligations, ...deployerResult.obligations]);
       expect(new Set(combinedResult.obligations)).toEqual(expectedUnion);
       expect(new Set(combinedResult.obligations).size).toBe(combinedResult.obligations.length);
+    });
+  });
+
+  describe('Governance Requirements and Evidence Checklist', () => {
+    const annexIIIInput: AssessmentInput = {
+      ...validInput,
+      systemName: 'Recruitment Screener',
+      description: 'Automated recruitment platform for CV screening of job candidates',
+    };
+
+    test('derives one checklist item per obligation with parsed article and artifact', () => {
+      const result = classifyAISystem({ ...annexIIIInput, role: ['provider'] });
+
+      expect(result.checklist).toHaveLength(result.obligations.length);
+      const art11 = result.checklist.find(i => i.obligationArticle === 'Article 11');
+      expect(art11?.requiredArtifact).toBe('Technical documentation file');
+    });
+
+    test('uses the inner article for "Treated as Provider" obligations', () => {
+      const result = classifyAISystem({ ...annexIIIInput, role: ['product_manufacturer'] });
+      const art9 = result.checklist.find(i => i.title.includes('Article 9: Risk Management'));
+      expect(art9?.obligationArticle).toBe('Article 9');
+    });
+
+    test('non-article obligations (e.g. minimal risk) fall back to General', () => {
+      const drafts = buildChecklistDrafts(['Compliance with general EU law', 'Standard documentation']);
+      expect(drafts).toHaveLength(2);
+      expect(drafts.every(i => i.obligationArticle === 'General')).toBe(true);
+      expect(drafts.every(i => i.requiredArtifact === 'Evidence of compliance')).toBe(true);
+    });
+
+    test('returns one governance requirement per role, scoped by classification', () => {
+      const result = classifyAISystem({ ...annexIIIInput, role: ['provider', 'deployer'] });
+
+      expect(result.classification).toBe('HIGH_RISK');
+      expect(result.governanceRequirements.map(g => g.role)).toEqual(['provider', 'deployer']);
+      for (const g of result.governanceRequirements) {
+        expect(g.ownerRole).toBeTruthy();
+        expect(g.reviewCadence).toBe('Quarterly');
+        expect(g.escalationTrigger).toBeTruthy();
+      }
     });
   });
 

@@ -35,7 +35,7 @@ export default function Home() {
           </div>
         </div>
 
-        <Link href="/dashboard">
+        <Link href="/assess">
           <Button className="px-8 py-3 text-lg">
             Start Assessment →
           </Button>

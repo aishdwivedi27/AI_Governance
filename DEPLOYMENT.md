@@ -128,6 +128,21 @@ Log in at `/login` with the seed credentials, then use `/admin/users` (seed
 user only) to reset that same account's password to a value that isn't
 sitting in any env file history.
 
+## LLM provider (Q&A / intake assistance)
+
+LLM calls go through `lib/llm` (`generateText`), which picks the provider from env vars. **The default is Gemini on Google's free API tier.** To switch to OpenAI or Claude, change env vars in Vercel (Project Settings > Environment Variables) and redeploy - no code change.
+
+1. Get a free Gemini key at https://aistudio.google.com/apikey and set `GEMINI_API_KEY`.
+2. Leave `LLM_PROVIDER` unset (or `gemini`).
+
+| To use | `LLM_PROVIDER` | Key variable | Default model (override with `LLM_MODEL`) |
+|---|---|---|---|
+| Gemini (default) | `gemini` | `GEMINI_API_KEY` | `gemini-3.6-flash` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` |
+
+Free-tier limits and eligible models change; if Gemini rejects the default, set `LLM_MODEL` to a current free-tier model. Note free-tier Gemini traffic may be used by Google to improve its products, so avoid sending sensitive internal product details until you move to a paid tier or another provider (REQUIREMENTS.md, section on LLM data handling). `LLM_TIMEOUT_MS` (default 25000) should stay below your Vercel function's max duration.
+
 ## Required environment variables
 
 | Variable | Used by | Notes |
@@ -137,3 +152,6 @@ sitting in any env file history.
 | `SEED_USER_EMAIL` | `npm run seed:user` (bootstrap only) | Not read by the running app |
 | `SEED_USER_PASSWORD` | `npm run seed:user` (bootstrap only) | Rotate after first login |
 | `SESSION_SECRET` | App runtime (`lib/auth.ts`) | HMAC key for session cookies; rotating invalidates all sessions |
+| `LLM_PROVIDER` | App runtime (`lib/llm`) | `gemini` (default), `openai` or `anthropic` |
+| `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | App runtime (`lib/llm`) | Only the key for the chosen provider is needed |
+| `LLM_MODEL`, `LLM_TIMEOUT_MS` | App runtime (`lib/llm`) | Optional model override and request timeout |
