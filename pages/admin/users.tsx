@@ -6,6 +6,7 @@ import Link from 'next/link';
 import type { GetServerSideProps } from 'next';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Label, Badge } from '@/components/ui';
 import { requireAuthSSR, type AuthedUser } from '@/lib/auth';
+import AppHeader from '@/components/AppHeader';
 
 export const getServerSideProps: GetServerSideProps = async (ctx) => {
   const result = await requireAuthSSR(ctx);
@@ -114,10 +115,11 @@ export default function AdminUsers({ user }: { user: AuthedUser }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gray-50">
+      <AppHeader user={user} />
+      <div className="max-w-4xl mx-auto space-y-6 px-4 py-8">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Users</h1>
           <Link href="/dashboard" className="text-sm text-blue-700 hover:underline">
             &larr; Back to dashboard
           </Link>

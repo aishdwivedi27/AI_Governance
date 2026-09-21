@@ -2,10 +2,12 @@
 // Multi-step assessment wizard (REQUIREMENTS.md 3.1). Step order, branching and completeness
 // rules live in lib/assessment-flow.ts; progress is saved to a QASession on every step change.
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import type { GetServerSideProps } from 'next';
-import { requireAuthSSR } from '@/lib/auth';
+import { requireAuthSSR, type AuthedUser } from '@/lib/auth';
+import AppHeader from '@/components/AppHeader';
 import {
   Alert,
   AlertDescription,
@@ -79,7 +81,7 @@ function CheckboxList({ options, selected, onToggle }: { options: string[]; sele
   );
 }
 
-export default function AssessPage() {
+export default function AssessPage({ user }: { user: AuthedUser }) {
   const router = useRouter();
   const [rules, setRules] = useState<WizardRules | null>(null);
   const [llmEnabled, setLlmEnabled] = useState(false);
@@ -691,10 +693,14 @@ export default function AssessPage() {
   const isReview = step.id === 'review';
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4">
+    <div className="min-h-screen bg-gray-50">
+      <Head>
+        <title>New assessment | AI Governance</title>
+      </Head>
+      <AppHeader user={user} />
+      <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold">New assessment</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">New assessment</h1>
           <Link href="/dashboard" className="text-sm text-blue-700 hover:underline">
             Back to dashboard
           </Link>

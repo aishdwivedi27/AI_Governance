@@ -1,14 +1,15 @@
 // pages/dashboard.tsx
 'use client';
 import { useState, useEffect } from 'react';
+import Head from 'next/head';
 import Link from 'next/link';
-import { useRouter } from 'next/router';
 import type { GetServerSideProps } from 'next';
 import { requireAuthSSR, type AuthedUser } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@/components/ui';
 import ResultView, { ResultData } from '@/components/ResultView';
 import { getClassificationStyle } from '@/components/classification-styles';
 import { Download, ChevronDown, ChevronUp } from 'lucide-react';
+import AppHeader from '@/components/AppHeader';
 
 export const getServerSideProps: GetServerSideProps = async (ctx) => requireAuthSSR(ctx);
 
@@ -62,7 +63,6 @@ function HistoryDetail({ id }: { id: string }) {
 }
 
 export default function Dashboard({ user }: { user: AuthedUser }) {
-  const router = useRouter();
   const [stats, setStats] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('assess');
@@ -112,29 +112,15 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
     }
   };
 
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-start justify-between mb-2">
-          <h1 className="text-4xl font-bold">EU AI Act Compliance Checker</h1>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-600">{user.email}</span>
-            {user.isSeedUser && (
-              <Link href="/admin/users" className="text-blue-700 hover:underline">
-                Manage users
-              </Link>
-            )}
-            <button onClick={handleLogout} className="text-gray-600 hover:text-gray-900 hover:underline">
-              Log out
-            </button>
-          </div>
-        </div>
-        <p className="text-gray-600 mb-8">Assess and track AI system risk classifications</p>
+    <div className="min-h-screen bg-gray-50">
+      <Head>
+        <title>Dashboard | AI Governance</title>
+      </Head>
+      <AppHeader user={user} />
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold tracking-tight text-gray-900">Compliance dashboard</h1>
+        <p className="text-gray-600 mt-1 mb-8">Assess and track AI system risk classifications</p>
 
         {/* Tabs */}
         <div className="flex gap-4 mb-8 border-b">
@@ -144,7 +130,7 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 font-medium capitalize ${
                 activeTab === tab
-                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  ? 'text-blue-700 border-b-2 border-brass-500 -mb-px'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
@@ -166,7 +152,7 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
               </p>
               <Link
                 href="/assess"
-                className="inline-flex h-10 items-center justify-center rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800"
+                className="inline-flex h-10 items-center justify-center rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800"
               >
                 Start an assessment
               </Link>
@@ -179,11 +165,11 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Assessment History</CardTitle>
+                <CardTitle>Assessment history</CardTitle>
               </CardHeader>
               <CardContent>
                 {history.length === 0 ? (
-                  <p className="text-gray-600">No assessments yet</p>
+                  <p className="text-sm text-gray-600">No assessments yet. Start one from the Assess tab and it will appear here.</p>
                 ) : (
                   <div className="space-y-3">
                     {history.map(assessment => {
@@ -199,8 +185,8 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
                               <p className="text-sm text-gray-600">{new Date(assessment.timestamp).toLocaleString()}</p>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className={`px-3 py-1 rounded text-sm ${getClassificationStyle(assessment.classification).badge}`}>
-                                {assessment.classification}
+                              <span className={`whitespace-nowrap px-3 py-1 rounded text-sm ${getClassificationStyle(assessment.classification).badge}`}>
+                                {String(assessment.classification).replace(/_/g, ' ')}
                               </span>
                               {open ? (
                                 <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -222,12 +208,12 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
 
         {/* STATS TAB */}
         {activeTab === 'stats' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             {stats && (
               <>
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">Total Assessments</CardTitle>
+                    <CardTitle className="text-sm text-gray-600">Total assessments</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-3xl font-bold">{stats.totalAssessments}</p>
@@ -236,7 +222,7 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
 
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">Unacceptable Risk</CardTitle>
+                    <CardTitle className="text-sm text-gray-600">Unacceptable risk</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-3xl font-bold text-red-600">{stats.byClassification.UNACCEPTABLE_RISK}</p>
@@ -245,7 +231,7 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
 
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">High Risk</CardTitle>
+                    <CardTitle className="text-sm text-gray-600">High risk</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-3xl font-bold text-orange-600">{stats.byClassification.HIGH_RISK}</p>
@@ -254,7 +240,7 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
 
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">Limited Risk</CardTitle>
+                    <CardTitle className="text-sm text-gray-600">Limited risk</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <p className="text-3xl font-bold text-yellow-600">{stats.byClassification.LIMITED_RISK}</p>
@@ -263,19 +249,19 @@ export default function Dashboard({ user }: { user: AuthedUser }) {
 
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-sm text-gray-600">Avg Confidence</CardTitle>
+                    <CardTitle className="text-sm text-gray-600">Average confidence</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-3xl font-bold text-blue-600">{stats.averageConfidence}%</p>
+                    <p className="text-3xl font-bold text-blue-700">{stats.averageConfidence}%</p>
                   </CardContent>
                 </Card>
               </>
             )}
 
             {/* Export Section */}
-            <Card className="lg:col-span-5">
+            <Card className="col-span-2 lg:col-span-5">
               <CardHeader>
-                <CardTitle>Export Data</CardTitle>
+                <CardTitle>Export data</CardTitle>
               </CardHeader>
               <CardContent className="flex gap-4">
                 <Button onClick={() => exportData('json')} variant="outline" className="flex items-center gap-2">

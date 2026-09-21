@@ -7,8 +7,8 @@ export default function App({ Component, pageProps }: AppProps) {
   return (
     <>
       <Head>
-        <title>EU AI Act Compliance Checker</title>
-        <meta name="description" content="Internal tool for EU AI Act compliance assessments" />
+        <title>AI Governance | EU AI Act &amp; VAISS</title>
+        <meta name="description" content="Classify AI systems under the EU AI Act and align them with Australia's VAISS" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta charSet="utf-8" />
         <meta httpEquiv="x-ua-compatible" content="ie=edge" />
