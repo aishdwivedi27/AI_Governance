@@ -26,7 +26,10 @@ import type { ChatState } from '@/components/wizard/ClarifyChat';
 import {
   GEOGRAPHY_OPTIONS,
   INDUSTRY_OPTIONS,
+  MIN_JUSTIFICATION_LENGTH,
   PRODUCT_TYPES,
+  RISK_KEYS,
+  RISK_LABELS,
   ROLE_OPTIONS,
   SECTOR_QUESTIONS,
   VULNERABLE_GROUP_OPTIONS,
@@ -37,11 +40,13 @@ import {
   getAnswerRows,
   getChallengedAnswers,
   getContradictionSignals,
+  getRiskOverrides,
   getScreeningQuestions,
   getVisibleSteps,
   isGpaiComputeVisible,
   isStepComplete,
   setAnswer,
+  suggestRisk,
 } from '@/lib/assessment-flow';
 import {
   AUSTRALIA_DISCLAIMER,
@@ -140,6 +145,8 @@ export default function AssessPage({ user }: { user: AuthedUser }) {
   const steps = useMemo(() => getVisibleSteps(answers), [answers]);
   const stepIndex = Math.max(0, steps.findIndex(s => s.id === stepId));
   const step = steps[stepIndex] ?? steps[0];
+  const riskSuggestion = useMemo(() => suggestRisk(answers), [answers]);
+  const riskOverrides = useMemo(() => getRiskOverrides(answers), [answers]);
 
   const update = (patch: Partial<WizardAnswers>) => setAnswers(prev => ({ ...prev, ...patch }));
 
@@ -531,20 +538,69 @@ export default function AssessPage({ user }: { user: AuthedUser }) {
                 </label>
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              {(['riskSeverity', 'riskLikelihood'] as const).map(key => (
-                <div key={key}>
-                  <Label htmlFor={key}>{key === 'riskSeverity' ? 'Risk severity (1-5, optional)' : 'Risk likelihood (1-5, optional)'}</Label>
-                  <Input
-                    id={key}
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={answers[key] ?? ''}
-                    onChange={e => update({ [key]: e.target.value === '' ? undefined : Number(e.target.value) })}
-                  />
-                </div>
-              ))}
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Risk impact and likelihood are suggested from your answers. Keep the suggestion, or change it and explain why.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {RISK_KEYS.map(key => {
+                  const suggested = riskSuggestion[key];
+                  const override = riskOverrides.find(o => o.key === key);
+                  const value = answers[key] ?? suggested;
+                  const setValue = (next: number) => {
+                    if (next === suggested) {
+                      const { [key]: _reason, ...reasons } = answers.riskOverrideReasons ?? {};
+                      update({ [key]: undefined, riskOverrideReasons: reasons });
+                    } else {
+                      update({ [key]: next });
+                    }
+                  };
+                  return (
+                    <div key={key} className="space-y-1">
+                      <Label htmlFor={key}>{RISK_LABELS[key]} *</Label>
+                      <select
+                        id={key}
+                        className="block w-full h-10 rounded-md border border-gray-200 bg-white px-2 text-sm"
+                        value={value}
+                        onChange={e => setValue(Number(e.target.value))}
+                      >
+                        {[1, 2, 3, 4, 5].map(n => (
+                          <option key={n} value={n}>
+                            {n}
+                            {n === suggested ? ' (suggested)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <ul className="text-xs text-gray-500 list-disc pl-4">
+                        {riskSuggestion.reasons[key].map(r => (
+                          <li key={r}>{r}</li>
+                        ))}
+                      </ul>
+                      {override ? (
+                        <div className="space-y-1">
+                          <Label htmlFor={`${key}-reason`}>
+                            Reason for changing from {suggested} to {override.chosen} *
+                          </Label>
+                          <Textarea
+                            id={`${key}-reason`}
+                            rows={2}
+                            value={answers.riskOverrideReasons?.[key] ?? ''}
+                            onChange={e => update({ riskOverrideReasons: { ...answers.riskOverrideReasons, [key]: e.target.value } })}
+                          />
+                          <p className={`text-xs ${override.valid ? 'text-gray-500' : 'text-red-600'}`}>
+                            At least {MIN_JUSTIFICATION_LENGTH} characters ({override.reason.length}/{MIN_JUSTIFICATION_LENGTH}).
+                          </p>
+                          <button type="button" className="text-xs underline text-gray-600" onClick={() => setValue(suggested)}>
+                            Reset to suggestion
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-green-700">Accepting the suggestion.</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             {isGpaiComputeVisible(answers) && (
               <div className="space-y-3 border-l-4 border-blue-200 pl-4">

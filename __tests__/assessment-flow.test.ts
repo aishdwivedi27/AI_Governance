@@ -7,10 +7,13 @@ import {
   getAnswerRows,
   getChallengedAnswers,
   getContradictionSignals,
+  getEffectiveRisk,
+  getRiskOverrides,
   getVisibleSteps,
   isStepComplete,
   sanitizeAnswers,
   setAnswer,
+  suggestRisk,
 } from '../lib/assessment-flow';
 import type { WizardAnswers } from '../lib/assessment-flow';
 import { getWizardRules } from '../lib/classification-engine';
@@ -190,5 +193,71 @@ describe('getAnswerRows', () => {
     expect(employment?.value).toBe('No (justification: because reasons)');
     expect(rows.some(r => r.label === 'Vulnerable groups')).toBe(false);
     expect(rows.find(r => r.label === 'Product type')?.value).toBe('Decision-support tool');
+  });
+});
+
+describe('suggested risk rating', () => {
+  const ok = 'Mitigations in place, reviewed by the risk board.';
+
+  test('suggests a baseline for a low-signal system and scales up with signals', () => {
+    const low = suggestRisk({ ...base, productType: 'other', annex3Answers: { employment: 'no' } });
+    expect([low.riskSeverity, low.riskLikelihood]).toEqual([1, 1]);
+    const high = suggestRisk({
+      ...base,
+      annex3Answers: { employment: 'yes' },
+      fundamentalRightsImpact: true,
+      vulnerableGroups: ['Children'],
+      crossBorderImpact: true,
+      generatesOrInteractsWithPeople: true,
+    });
+    expect(high.riskSeverity).toBe(5);
+    expect(high.riskLikelihood).toBeGreaterThan(3);
+    expect(high.riskLikelihood).toBeLessThanOrEqual(5);
+    expect(high.reasons.riskSeverity.length).toBeGreaterThan(0);
+  });
+
+  test('untouched ratings are the suggestion and need no reason', () => {
+    const answers = { ...base, fundamentalRightsImpact: true };
+    expect(getRiskOverrides(answers)).toEqual([]);
+    expect(getEffectiveRisk(answers)).toEqual({
+      riskSeverity: suggestRisk(answers).riskSeverity,
+      riskLikelihood: suggestRisk(answers).riskLikelihood,
+    });
+    expect(isStepComplete('context', answers, rules)).toBe(true);
+  });
+
+  test('a value equal to the suggestion counts as accepted', () => {
+    const s = suggestRisk(base);
+    expect(getRiskOverrides({ ...base, riskSeverity: s.riskSeverity })).toEqual([]);
+  });
+
+  test('changing a rating requires a written reason to complete the step', () => {
+    const s = suggestRisk(base);
+    const changed = { ...base, riskLikelihood: s.riskLikelihood === 5 ? 4 : 5 };
+    expect(getRiskOverrides(changed)[0]).toMatchObject({ key: 'riskLikelihood', valid: false });
+    expect(isStepComplete('context', changed, rules)).toBe(false);
+    expect(isStepComplete('context', { ...changed, riskOverrideReasons: { riskLikelihood: 'too short' } }, rules)).toBe(false);
+    expect(isStepComplete('context', { ...changed, riskOverrideReasons: { riskLikelihood: ok } }, rules)).toBe(true);
+  });
+
+  test('out-of-range values are invalid even with a reason', () => {
+    const answers = { ...base, riskSeverity: 9, riskOverrideReasons: { riskSeverity: ok } };
+    expect(isStepComplete('context', answers, rules)).toBe(false);
+  });
+
+  test('engine input uses the override, and rows record accepted vs changed', () => {
+    const s = suggestRisk(base);
+    const newSeverity = s.riskSeverity === 5 ? 4 : 5;
+    const answers = { ...base, riskSeverity: newSeverity, riskOverrideReasons: { riskSeverity: ok } };
+    const input = buildAssessmentInput(answers);
+    expect(input.riskSeverity).toBe(newSeverity);
+    expect(input.riskLikelihood).toBe(s.riskLikelihood);
+    const rows = getAnswerRows(answers, rules);
+    expect(rows.find(r => r.label === 'Risk impact (1-5)')?.value).toContain(`changed from suggested ${s.riskSeverity}; reason: ${ok}`);
+    expect(rows.find(r => r.label === 'Risk likelihood (1-5)')?.value).toContain('system-suggested, accepted');
+  });
+
+  test('sanitizeAnswers keeps override reasons', () => {
+    expect(sanitizeAnswers({ riskOverrideReasons: { riskSeverity: 'x' } }).riskOverrideReasons).toEqual({ riskSeverity: 'x' });
   });
 });

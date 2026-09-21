@@ -3,7 +3,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { classifyAISystem, AssessmentInput, ClassificationResult } from '@/lib/classification-engine';
 import { appendAssessment } from '@/lib/assessment-log';
 import { getChecklistForAssessment } from '@/lib/checklist';
-import { sanitizeAnswers } from '@/lib/assessment-flow';
+import { RISK_LABELS, getRiskOverrides, sanitizeAnswers } from '@/lib/assessment-flow';
 import { assessAlignment, isAustraliaSelected } from '@/lib/australia-alignment';
 import { updateQASessionForActor } from '@/lib/qa-sessions';
 import { requireAuth } from '@/lib/auth';
@@ -36,11 +36,20 @@ export default async function handler(
       });
     }
 
-    // Classify the AI system
-    const classificationResult = classifyAISystem(input);
-
     // Immutable snapshot of what was submitted (known keys only), for history and the PDF
     const answers = sanitizeAnswers(req.body);
+
+    // A risk rating that differs from the system suggestion must carry a written reason
+    const badOverrides = getRiskOverrides(answers).filter(o => !o.valid);
+    if (badOverrides.length > 0) {
+      return res.status(400).json({
+        error: 'Changing a suggested risk rating requires a reason',
+        details: badOverrides.map(o => RISK_LABELS[o.key]).join(', '),
+      });
+    }
+
+    // Classify the AI system
+    const classificationResult = classifyAISystem(input);
 
     // Australia mapping runs only when Australia was selected and its questions were answered
     const australia =

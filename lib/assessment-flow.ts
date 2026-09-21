@@ -88,6 +88,11 @@ export interface WizardAnswers extends Partial<AssessmentInput> {
   additionalNotes?: string;
   /** Australia AI adoption guidance questions, keyed by question key. Only asked when Australia is a selected geography. */
   australiaAnswers?: Record<string, TriState>;
+  /**
+   * Written reasons for changing a system-suggested risk rating, keyed by field. riskSeverity and
+   * riskLikelihood hold a value only when it differs from the suggestion (see getRiskOverrides).
+   */
+  riskOverrideReasons?: Partial<Record<RiskKey, string>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -494,7 +499,7 @@ export function isStepComplete(step: StepId, answers: WizardAnswers, rules: Wiza
     case 'exemption':
       return questionsComplete('exemption', answers, rules);
     case 'context':
-      return (answers.geographies?.length ?? 0) > 0 && !!answers.industry?.trim();
+      return (answers.geographies?.length ?? 0) > 0 && !!answers.industry?.trim() && getRiskOverrides(answers).every(o => o.valid);
     case 'australia':
       return isAustraliaStepComplete(answers);
     case 'review':
@@ -511,6 +516,110 @@ export function firstIncompleteStep(answers: WizardAnswers, rules: WizardRules):
 
 export function isGpaiComputeVisible(answers: WizardAnswers): boolean {
   return answers.productType === 'gpai';
+}
+
+// ---------------------------------------------------------------------------
+// Risk rating: system-suggested, user may accept or change (a change needs a reason)
+// ---------------------------------------------------------------------------
+
+export type RiskKey = 'riskSeverity' | 'riskLikelihood';
+export const RISK_KEYS: readonly RiskKey[] = ['riskSeverity', 'riskLikelihood'];
+export const RISK_LABELS: Record<RiskKey, string> = { riskSeverity: 'Risk impact (1-5)', riskLikelihood: 'Risk likelihood (1-5)' };
+
+export interface RiskSuggestion {
+  riskSeverity: number;
+  riskLikelihood: number;
+  /** Plain-language reasons behind each suggested value, shown next to the field. */
+  reasons: Record<RiskKey, string[]>;
+}
+
+/** Derive a suggested impact (severity) and likelihood, each 1-5, from answers already given. */
+export function suggestRisk(answers: WizardAnswers): RiskSuggestion {
+  const sev: string[] = [];
+  const lik: string[] = [];
+  let severity = 1;
+  let likelihood = 1;
+
+  if (hasAnyYes(answers.article5Answers)) {
+    severity = 5;
+    sev.push('A prohibited practice (Article 5) was indicated.');
+  } else {
+    const answered = [answers.annex1Answer, ...Object.values(answers.annex3Answers ?? {})];
+    if (answered.includes('yes')) {
+      severity += 2;
+      sev.push('Used in an Annex I / Annex III high-risk area (+2).');
+    } else if (answered.includes('unsure')) {
+      severity += 1;
+      sev.push('Unsure whether it is used in a high-risk area (+1).');
+    }
+    if (answers.fundamentalRightsImpact) {
+      severity += 1;
+      sev.push('May impact fundamental rights (+1).');
+    }
+    if ((answers.vulnerableGroups?.length ?? 0) > 0) {
+      severity += 1;
+      sev.push('Affects vulnerable groups (+1).');
+    }
+  }
+
+  if (answers.generatesOrInteractsWithPeople) {
+    likelihood += 1;
+    lik.push('Interacts directly with people or generates synthetic content (+1).');
+  }
+  if (answers.crossBorderImpact) {
+    likelihood += 1;
+    lik.push('May have cross-border impact (+1).');
+  }
+  if ((answers.geographies?.length ?? 0) > 1) {
+    likelihood += 1;
+    lik.push('Deployed in more than one geography (+1).');
+  }
+  if (answers.productType && ['decision_support', 'recommender', 'biometric', 'agentic'].includes(answers.productType)) {
+    likelihood += 1;
+    lik.push('Product type directly shapes decisions about people or acts autonomously (+1).');
+  }
+  if (getActiveAnnex3Categories(answers).length > 0) {
+    likelihood += 1;
+    lik.push('Intended use falls in a high-risk area, so exposure is expected (+1).');
+  }
+
+  if (!sev.length) sev.push('Baseline: no elevated-impact signals in your answers.');
+  if (!lik.length) lik.push('Baseline: no elevated-exposure signals in your answers.');
+
+  return {
+    riskSeverity: Math.min(5, severity),
+    riskLikelihood: Math.min(5, likelihood),
+    reasons: { riskSeverity: sev, riskLikelihood: lik },
+  };
+}
+
+export interface RiskOverride {
+  key: RiskKey;
+  suggested: number;
+  chosen: number;
+  reason: string;
+  /** In range, and a written reason of at least MIN_JUSTIFICATION_LENGTH characters was given. */
+  valid: boolean;
+}
+
+/** Fields whose stored value differs from the suggestion. A value equal to the suggestion counts as accepted. */
+export function getRiskOverrides(answers: WizardAnswers): RiskOverride[] {
+  const suggestion = suggestRisk(answers);
+  const out: RiskOverride[] = [];
+  for (const key of RISK_KEYS) {
+    const chosen = answers[key];
+    if (chosen === undefined || chosen === suggestion[key]) continue;
+    const reason = (answers.riskOverrideReasons?.[key] ?? '').trim();
+    const inRange = Number.isInteger(chosen) && chosen >= 1 && chosen <= 5;
+    out.push({ key, suggested: suggestion[key], chosen, reason, valid: inRange && reason.length >= MIN_JUSTIFICATION_LENGTH });
+  }
+  return out;
+}
+
+/** The ratings the engine should use: the user's change if any, otherwise the suggestion. */
+export function getEffectiveRisk(answers: WizardAnswers): Record<RiskKey, number> {
+  const s = suggestRisk(answers);
+  return { riskSeverity: answers.riskSeverity ?? s.riskSeverity, riskLikelihood: answers.riskLikelihood ?? s.riskLikelihood };
 }
 
 // ---------------------------------------------------------------------------
@@ -543,6 +652,7 @@ export const ANSWER_KEYS = [
   'sectorAnswers',
   'additionalNotes',
   'australiaAnswers',
+  'riskOverrideReasons',
 ] as const;
 
 /** Keep only known keys; used to persist a clean answers snapshot. */
@@ -578,8 +688,7 @@ export function buildAssessmentInput(answers: WizardAnswers): AssessmentInput {
     vulnerableGroups: answers.vulnerableGroups ?? [],
     fundamentalRightsImpact: !!answers.fundamentalRightsImpact,
     crossBorderImpact: !!answers.crossBorderImpact,
-    riskSeverity: answers.riskSeverity,
-    riskLikelihood: answers.riskLikelihood,
+    ...getEffectiveRisk(answers),
     role: answers.role ?? [],
     productType: answers.productType,
     article5Answers: answers.article5Answers,
@@ -663,8 +772,16 @@ export function getAnswerRows(answers: WizardAnswers, rules: WizardRules): Answe
   if (answers.generatesOrInteractsWithPeople !== undefined) {
     add('Context', 'Interacts with people or generates synthetic content', answers.generatesOrInteractsWithPeople ? 'Yes' : 'No');
   }
-  add('Context', 'Risk severity (1-5)', answers.riskSeverity);
-  add('Context', 'Risk likelihood (1-5)', answers.riskLikelihood);
+  const effectiveRisk = getEffectiveRisk(answers);
+  const overrides = getRiskOverrides(answers);
+  for (const key of RISK_KEYS) {
+    const o = overrides.find(x => x.key === key);
+    add(
+      'Context',
+      RISK_LABELS[key],
+      o ? `${o.chosen} (changed from suggested ${o.suggested}; reason: ${o.reason || 'none given'})` : `${effectiveRisk[key]} (system-suggested, accepted)`
+    );
+  }
   add('Context', 'GPAI training compute (FLOPs)', answers.gpaiTrainingComputeFLOPs);
   if (answers.gpaiSystemicRiskDesignation !== undefined) {
     add('Context', 'Commission systemic-risk designation', answers.gpaiSystemicRiskDesignation ? 'Yes' : 'No');
