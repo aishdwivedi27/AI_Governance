@@ -4,6 +4,7 @@ import { classifyAISystem, AssessmentInput, ClassificationResult } from '@/lib/c
 import { appendAssessment } from '@/lib/assessment-log';
 import { getChecklistForAssessment } from '@/lib/checklist';
 import { sanitizeAnswers } from '@/lib/assessment-flow';
+import { assessAlignment, isAustraliaSelected } from '@/lib/australia-alignment';
 import { updateQASessionForActor } from '@/lib/qa-sessions';
 import { requireAuth } from '@/lib/auth';
 
@@ -41,6 +42,12 @@ export default async function handler(
     // Immutable snapshot of what was submitted (known keys only), for history and the PDF
     const answers = sanitizeAnswers(req.body);
 
+    // Australia mapping runs only when Australia was selected and its questions were answered
+    const australia =
+      isAustraliaSelected(answers.geographies) && answers.australiaAnswers
+        ? assessAlignment({ answers, classification: classificationResult.classification, obligations: classificationResult.obligations })
+        : null;
+
     // Store in assessment log
     const assessment = await appendAssessment({
       systemName: input.systemName,
@@ -63,7 +70,11 @@ export default async function handler(
         fundamentalRightsImpact: input.fundamentalRightsImpact,
         crossBorderImpact: input.crossBorderImpact,
       },
-    }, { actorId: user.id, checklistDrafts: classificationResult.checklist, answers });
+    }, {
+      actorId: user.id,
+      checklistDrafts: [...classificationResult.checklist, ...(australia?.checklist ?? [])],
+      answers,
+    });
 
     // Best effort: mark the draft this assessment came from as submitted
     const { sessionId } = req.body as { sessionId?: unknown };
@@ -86,6 +97,7 @@ export default async function handler(
         ...classificationResult,
         assessmentId: assessment.id,
         checklist,
+        australia,
       },
     });
   } catch (error) {

@@ -14,10 +14,13 @@ import {
   WizardRules,
 } from './classification-engine';
 import type { WizardAnswers } from './assessment-flow';
+import { assessAlignment, isAustraliaSelected, AustraliaAlignment } from './australia-alignment';
 
 export interface SystemReport {
   assessment: AssessmentRecord;
   answers: WizardAnswers | null;
+  /** Present only when Australia was a selected geography and its questions were answered. */
+  australia?: AustraliaAlignment | null;
   governanceRequirements: GovernanceRequirement[];
   uncertainty: Uncertainty | null;
   checklist: EvidenceChecklistItem[];
@@ -35,6 +38,11 @@ export async function getSystemReport(assessmentId: string): Promise<SystemRepor
   return {
     assessment,
     answers,
+    // Derived, like governance: the answers snapshot and the stored classification/obligations are the inputs.
+    australia:
+      answers && isAustraliaSelected(answers.geographies) && answers.australiaAnswers
+        ? assessAlignment({ answers, classification, obligations: assessment.obligations })
+        : null,
     // Not stored on the record: derived from the classification and the roles that were answered.
     governanceRequirements: answers?.role?.length ? getGovernanceRequirements(classification, answers.role) : [],
     uncertainty: answers ? computeUncertainty(answers, classification) ?? null : null,

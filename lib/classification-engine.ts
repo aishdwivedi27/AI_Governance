@@ -12,6 +12,7 @@ import {
   getChallengedAnswers,
   getScreeningQuestions,
 } from './assessment-flow';
+import { AUSTRALIA_QUESTION_KEYS } from './australia-alignment';
 import type {
   ChallengedAnswer,
   ExemptionKey,
@@ -537,6 +538,7 @@ function validateStructuredInput(input: AssessmentInput): void {
   checkMap('article5Answers', input.article5Answers, rules.article5.map(p => p.id));
   checkMap('annex3Answers', input.annex3Answers, rules.annexIII.map(c => c.id));
   checkMap('exemptionAnswers', input.exemptionAnswers, [...EXEMPTION_KEYS]);
+  checkMap('australiaAnswers', (input as WizardAnswers).australiaAnswers, AUSTRALIA_QUESTION_KEYS);
   if (input.annex1Answer !== undefined && !isTri(input.annex1Answer)) fail('annex1Answer must be yes, no or unsure');
   if (input.justifications !== undefined) {
     if (typeof input.justifications !== 'object' || input.justifications === null) fail('justifications must be an object');

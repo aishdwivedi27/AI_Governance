@@ -41,6 +41,13 @@ import {
   isStepComplete,
   setAnswer,
 } from '@/lib/assessment-flow';
+import {
+  AUSTRALIA_DISCLAIMER,
+  AUSTRALIA_PRACTICES,
+  AUSTRALIA_STANDARD,
+  getAustraliaQuestions,
+  getAustraliaSignals,
+} from '@/lib/australia-alignment';
 import type { ScreeningQuestion, StepId, TriState, WizardAnswers, WizardRules } from '@/lib/assessment-flow';
 
 export const getServerSideProps: GetServerSideProps = async ctx => requireAuthSSR(ctx);
@@ -563,11 +570,39 @@ export default function AssessPage() {
           </div>
         );
 
+      case 'australia':
+        return (
+          <div className="space-y-4">
+            <Alert>
+              <AlertDescription>
+                <span className="font-medium">Best effort, expert review required.</span> {AUSTRALIA_DISCLAIMER}
+              </AlertDescription>
+            </Alert>
+            <p className="text-sm text-gray-600">
+              You selected Australia. These questions follow the {AUSTRALIA_STANDARD.name} ({AUSTRALIA_STANDARD.published.slice(0, 4)}), which
+              replaced the 10-guardrail Voluntary AI Safety Standard with six essential practices. It is voluntary. Your answers decide whether the
+              system is treated as aligned with it and how it lines up with the EU AI Act. "Unsure" is never counted as aligned.
+            </p>
+            {AUSTRALIA_PRACTICES.map(p => (
+              <div key={p.id} className="space-y-3">
+                <p className="text-sm font-semibold">
+                  Practice {p.number}: {p.name}
+                </p>
+                {getAustraliaQuestions()
+                  .filter(q => q.article === `Australia: ${p.name}`)
+                  .map(renderAustraliaQuestion)}
+              </div>
+            ))}
+          </div>
+        );
+
       case 'review': {
         const rows = getAnswerRows(answers, rules);
         const sections = Array.from(new Set(rows.map(r => r.section)));
         const challenged = getChallengedAnswers(answers, rules);
-        const unsure = questions.filter(q => getAnswer(answers, q.id) === 'unsure');
+        const unsure = [...questions, ...(steps.some(s => s.id === 'australia') ? getAustraliaQuestions() : [])].filter(
+          q => getAnswer(answers, q.id) === 'unsure'
+        );
         return (
           <div className="space-y-4">
             {(unsure.length > 0 || challenged.length > 0) && (
@@ -600,6 +635,35 @@ export default function AssessPage() {
       }
     }
   };
+
+  // Australia questions reuse the tri-state UI. The LLM helper is off (it only knows the EU questions),
+  // and a "Yes" that other answers contradict is flagged here and evidenced in the result.
+  function renderAustraliaQuestion(q: ScreeningQuestion) {
+    const key = q.id.slice('australia.'.length);
+    const signals = getAustraliaSignals(key, answers);
+    return (
+      <div key={q.id} className="space-y-1">
+        <TriStateQuestion
+          question={q}
+          value={getAnswer(answers, q.id)}
+          onChange={v => setQuestionAnswer(q.id, v)}
+          signals={[]}
+          justification=""
+          onJustification={() => undefined}
+          llmEnabled={false}
+          answers={answers}
+          sessionId={sessionId}
+          chats={chats}
+          onChat={() => undefined}
+        />
+        {signals.map((s, i) => (
+          <p key={i} className="text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded px-2 py-1">
+            This "Yes" may not hold: {s} It will be flagged for evidence in the result.
+          </p>
+        ))}
+      </div>
+    );
+  }
 
   function renderSectorQuestion(id: string, text: string) {
     const fake: ScreeningQuestion = { id, step: 'sector', label: text, text, helpText: '', examples: [], article: '' };

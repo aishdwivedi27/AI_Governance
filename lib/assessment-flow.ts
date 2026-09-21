@@ -7,6 +7,13 @@
 // cycle (the engine imports this module for the shared constants and signal detection).
 import type { AssessmentInput, Role } from './classification-engine';
 import { normalizeText } from './text-match';
+import {
+  AUSTRALIA_GEOGRAPHY,
+  AUSTRALIA_QUESTION_KEYS,
+  getAustraliaQuestions,
+  isAustraliaSelected,
+  isAustraliaStepComplete,
+} from './australia-alignment';
 
 export type TriState = 'yes' | 'no' | 'unsure';
 export const TRI_STATES: readonly TriState[] = ['yes', 'no', 'unsure'];
@@ -41,7 +48,7 @@ export const EXEMPTION_KEYS = [
 ] as const;
 export type ExemptionKey = (typeof EXEMPTION_KEYS)[number];
 
-export const GEOGRAPHY_OPTIONS = ['EU', 'UK', 'USA', 'Global'];
+export const GEOGRAPHY_OPTIONS = ['EU', 'UK', 'USA', AUSTRALIA_GEOGRAPHY, 'Global'];
 export const VULNERABLE_GROUP_OPTIONS = [
   'Children',
   'Elderly',
@@ -79,6 +86,8 @@ export interface WizardAnswers extends Partial<AssessmentInput> {
   sectorAnswers?: Record<string, TriState>;
   /** Optional free-form notes added on the review step. */
   additionalNotes?: string;
+  /** Australia AI adoption guidance questions, keyed by question key. Only asked when Australia is a selected geography. */
+  australiaAnswers?: Record<string, TriState>;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +102,7 @@ export type StepId =
   | 'article5'
   | 'exemption'
   | 'context'
+  | 'australia'
   | 'review';
 
 export interface StepDef {
@@ -109,6 +119,11 @@ export const STEPS: StepDef[] = [
   { id: 'article5', title: 'Prohibited practices', description: 'Article 5 screening.' },
   { id: 'exemption', title: 'Article 6(3) exemption', description: 'Only for Annex III systems.' },
   { id: 'context', title: 'Context', description: 'Geography, vulnerable groups and impact.' },
+  {
+    id: 'australia',
+    title: 'Australia AI practices',
+    description: "Australia's voluntary Guidance for AI Adoption (successor to the VAISS guardrails): six essential practices.",
+  },
   { id: 'review', title: 'Review and submit', description: 'Check your answers before classifying.' },
 ];
 
@@ -129,15 +144,18 @@ export function getVisibleSteps(answers: WizardAnswers): StepDef[] {
   // Gate "No": out of scope, nothing else to ask.
   if (answers.isAISystem === false) return byId(['gate']);
 
+  // Australia questions only when Australia is a selected geography
+  const tail: StepId[] = isAustraliaSelected(answers.geographies) ? ['context', 'australia', 'review'] : ['context', 'review'];
+
   // Article 5 "Yes" is fatal: the exemption step is pointless, but industry/geography are
   // still needed for the record, so only that step is skipped.
   if (hasAnyYes(answers.article5Answers)) {
-    return byId(['gate', 'product', 'role', 'sector', 'article5', 'context', 'review']);
+    return byId(['gate', 'product', 'role', 'sector', 'article5', ...tail]);
   }
 
   const ids: StepId[] = ['gate', 'product', 'role', 'sector', 'article5'];
   if (getActiveAnnex3Categories(answers).length > 0) ids.push('exemption');
-  ids.push('context', 'review');
+  ids.push(...tail);
   return byId(ids);
 }
 
@@ -302,6 +320,7 @@ export function getQuestion(questionId: string, rules: WizardRules): ScreeningQu
 export function getAnswer(answers: WizardAnswers, questionId: string): TriState | undefined {
   if (questionId === 'annex1') return answers.annex1Answer;
   const [group, key] = questionId.split('.');
+  if (group === 'australia') return answers.australiaAnswers?.[key];
   if (group === 'annex3') return answers.annex3Answers?.[key];
   if (group === 'article5') return answers.article5Answers?.[key];
   if (group === 'exemption') return answers.exemptionAnswers?.[key as ExemptionKey];
@@ -311,6 +330,7 @@ export function getAnswer(answers: WizardAnswers, questionId: string): TriState 
 export function setAnswer(answers: WizardAnswers, questionId: string, value: TriState): WizardAnswers {
   if (questionId === 'annex1') return { ...answers, annex1Answer: value };
   const [group, key] = questionId.split('.');
+  if (group === 'australia') return { ...answers, australiaAnswers: { ...answers.australiaAnswers, [key]: value } };
   if (group === 'annex3') return { ...answers, annex3Answers: { ...answers.annex3Answers, [key]: value } };
   if (group === 'article5') return { ...answers, article5Answers: { ...answers.article5Answers, [key]: value } };
   if (group === 'exemption') {
@@ -475,6 +495,8 @@ export function isStepComplete(step: StepId, answers: WizardAnswers, rules: Wiza
       return questionsComplete('exemption', answers, rules);
     case 'context':
       return (answers.geographies?.length ?? 0) > 0 && !!answers.industry?.trim();
+    case 'australia':
+      return isAustraliaStepComplete(answers);
     case 'review':
       return true;
   }
@@ -520,6 +542,7 @@ export const ANSWER_KEYS = [
   'affectedParties',
   'sectorAnswers',
   'additionalNotes',
+  'australiaAnswers',
 ] as const;
 
 /** Keep only known keys; used to persist a clean answers snapshot. */
@@ -529,7 +552,20 @@ export function sanitizeAnswers(raw: unknown): WizardAnswers {
   for (const key of ANSWER_KEYS) {
     if ((raw as Record<string, unknown>)[key] !== undefined) out[key] = (raw as Record<string, unknown>)[key];
   }
-  return out as WizardAnswers;
+  const answers = out as WizardAnswers;
+  if (answers.australiaAnswers) {
+    // Drop stale answers when Australia was deselected, and anything that is not a known question with a valid answer
+    const kept: Record<string, TriState> = {};
+    if (isAustraliaSelected(answers.geographies)) {
+      for (const k of AUSTRALIA_QUESTION_KEYS) {
+        const v = answers.australiaAnswers[k];
+        if (TRI_STATES.includes(v)) kept[k] = v;
+      }
+    }
+    if (Object.keys(kept).length) answers.australiaAnswers = kept;
+    else delete answers.australiaAnswers;
+  }
+  return answers;
 }
 
 /** Turn wizard answers into an engine input (structured answers are passed through as-is). */
@@ -596,6 +632,7 @@ export function getAnswerRows(answers: WizardAnswers, rules: WizardRules): Answe
     article5: 'Article 5 screening',
     exemption: 'Article 6(3) exemption',
     context: 'Context',
+    australia: 'Australia AI practices',
     review: 'Review',
   };
   for (const q of questions) {
@@ -608,6 +645,13 @@ export function getAnswerRows(answers: WizardAnswers, rules: WizardRules): Answe
     for (const q of SECTOR_QUESTIONS[cat] ?? []) {
       const a = answers.sectorAnswers?.[q.id];
       if (a) add('Sector and use case', q.text, TRI_LABEL[a]);
+    }
+  }
+
+  if (isAustraliaSelected(answers.geographies)) {
+    for (const q of getAustraliaQuestions()) {
+      const a = getAnswer(answers, q.id);
+      if (a) add(sectionOf.australia, q.label, TRI_LABEL[a]);
     }
   }
 

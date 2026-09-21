@@ -160,7 +160,7 @@ export async function buildReportPdf(report: SystemReport, generatedAt: Date): P
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const w = new Writer(doc, font, bold);
 
-  const { assessment, answers, governanceRequirements, uncertainty, checklist, rules } = report;
+  const { assessment, answers, governanceRequirements, uncertainty, checklist, rules, australia } = report;
   const generated = generatedAt.toISOString();
 
   doc.setTitle(`Compliance record - ${assessment.systemName}`);
@@ -215,9 +215,12 @@ export async function buildReportPdf(report: SystemReport, generatedAt: Date): P
     for (const a of assessment.applicableArticles) w.text(`- ${a}`, { indent: 8, gap: 1 });
   }
 
-  // 3. Pessimistic outlook
+  // Sections after classification are numbered in the order they appear
+  let section = 2;
+
+  // Pessimistic outlook
   if (uncertainty) {
-    w.heading('3. Pessimistic outlook');
+    w.heading(`${++section}. Pessimistic outlook`);
     w.text(uncertainty.note, { color: COLORS.warn });
     w.keyValue('Worst case', uncertainty.worstCaseClassification.replace(/_/g, ' '));
     if (uncertainty.unsureQuestions.length) {
@@ -236,8 +239,34 @@ export async function buildReportPdf(report: SystemReport, generatedAt: Date): P
     }
   }
 
-  // 4. Governance
-  w.heading(`${uncertainty ? '4' : '3'}. Governance structure`);
+  // Australia alignment (only when Australia was selected)
+  if (australia) {
+    w.heading(`${++section}. Australia AI adoption guidance and EU AI Act alignment`);
+    w.text(`BEST EFFORT - EXPERT REVIEW REQUIRED. ${australia.caveat}`, { size: 9, bold: true, color: COLORS.warn });
+    w.text(
+      `${australia.standard.name} (${australia.standard.publisher}, ${australia.standard.published}). Voluntary; supersedes the ${australia.standard.supersedes}. Assessed at the ${australia.level} level.`,
+      { size: 9, color: COLORS.muted }
+    );
+    w.keyValue('Australian voluntary standard', `${australia.vaiss.verdict.replace(/_/g, ' ')} - ${australia.vaiss.summary}`);
+    w.keyValue('EU AI Act', `${australia.euAiAct.verdict.replace(/_/g, ' ')} - ${australia.euAiAct.summary}`);
+    w.subheading('How this was decided');
+    australia.reasoning.forEach((r, i) => w.text(`${i + 1}. ${r}`, { indent: 8, size: 9, gap: 1 }));
+    w.subheading('Six essential practices');
+    for (const p of australia.practices) {
+      w.text(`${p.number}. ${p.name} [${p.status}]`, { indent: 8, bold: true, gap: 1 });
+      w.text(`VAISS guardrails: ${p.guardrails.map(g => g.number).join(', ')}`, { indent: 18, size: 9, color: COLORS.muted, gap: 1 });
+      for (const a of p.actions) w.text(`Action: ${a}`, { indent: 18, size: 9, gap: 1 });
+    }
+    if (australia.euAiAct.obligations.length) {
+      w.subheading('EU obligations checked against these controls');
+      for (const o of australia.euAiAct.obligations) w.text(`- [${o.status.replace(/_/g, ' ')}] ${o.obligation}`, { indent: 8, size: 9, gap: 1 });
+    }
+    w.subheading('Where the two differ');
+    for (const c of australia.crossCheck) w.text(`- ${c}`, { indent: 8, size: 9, gap: 1 });
+  }
+
+  // Governance
+  w.heading(`${++section}. Governance structure`);
   if (governanceRequirements.length) {
     for (const g of governanceRequirements) {
       w.subheading(g.role.replace(/_/g, ' '));
@@ -249,8 +278,8 @@ export async function buildReportPdf(report: SystemReport, generatedAt: Date): P
     w.text('No governance structure recorded (roles were not captured for this assessment).', { color: COLORS.muted });
   }
 
-  // 5. Checklist
-  w.heading(`${uncertainty ? '5' : '4'}. Evidence checklist (state at report generation)`);
+  // Checklist
+  w.heading(`${++section}. Evidence checklist (state at report generation)`);
   if (checklist.length) {
     checklist.forEach((item, i) => {
       const heading = item.title.startsWith(item.obligationArticle) ? item.title : `${item.obligationArticle}: ${item.title}`;

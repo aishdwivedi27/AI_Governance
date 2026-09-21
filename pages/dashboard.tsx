@@ -27,6 +27,7 @@ function reportToResult(report: any): ResultData {
     governanceRequirements: report.governanceRequirements ?? [],
     uncertainty: report.uncertainty,
     checklist: report.checklist,
+    australia: report.australia,
   };
 }
 
