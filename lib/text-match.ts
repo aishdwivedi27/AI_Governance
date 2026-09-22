@@ -29,8 +29,21 @@ export function levenshteinDistance(str1: string, str2: string): number {
   return matrix[len2][len1];
 }
 
+// Two words are a "close" fuzzy match if they're identical, or similar enough in
+// edit distance relative to their length to plausibly be a typo of each other.
+// Short words (< 4 chars) are excluded: at that length, an edit-distance-based
+// similarity score is too easily satisfied by two unrelated words (e.g. "rail"
+// vs "spam"), which produced false positives against real trigger lists.
+function isCloseWordMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 4 || b.length < 4) return false;
+  const distance = levenshteinDistance(a, b);
+  const similarity = 1 - distance / Math.max(a.length, b.length);
+  return similarity >= 0.8;
+}
+
 // Check if word contains trigger with fuzzy matching (allows typos)
-export function wordContainsTriggerFuzzy(word: string, trigger: string, maxDistance: number = 3): boolean {
+export function wordContainsTriggerFuzzy(word: string, trigger: string): boolean {
   const normalized = normalizeText(word);
   const normalizedTrigger = normalizeText(trigger);
 
@@ -43,28 +56,11 @@ export function wordContainsTriggerFuzzy(word: string, trigger: string, maxDista
 
   // For single-word triggers, check fuzzy match against all words
   if (triggerWords.length === 1) {
-    for (const word of words) {
-      const distance = levenshteinDistance(word, normalizedTrigger);
-      const similarity = 1 - (distance / Math.max(word.length, normalizedTrigger.length));
-      if (similarity >= 0.8 || distance <= maxDistance) {
-        return true;
-      }
-    }
+    return words.some(w => isCloseWordMatch(w, normalizedTrigger));
   }
 
-  // For multi-word triggers, check if all trigger words appear (fuzzy)
-  let matchedWords = 0;
-  for (const triggerWord of triggerWords) {
-    for (const word of words) {
-      const distance = levenshteinDistance(word, triggerWord);
-      if (distance <= maxDistance || (1 - (distance / Math.max(word.length, triggerWord.length))) >= 0.8) {
-        matchedWords++;
-        break;
-      }
-    }
-  }
-
-  return matchedWords === triggerWords.length;
+  // For multi-word triggers, every trigger word must fuzzy-match some word in the text
+  return triggerWords.every(triggerWord => words.some(w => isCloseWordMatch(w, triggerWord)));
 }
 
 export function textContainsTrigger(text: string, trigger: string): boolean {

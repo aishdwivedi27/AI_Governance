@@ -1,515 +1,189 @@
-# 📚 EU AI Act Governance Platform - File Index & Quick Start
+# EU AI Act Internal Governance Tool
 
-## 🚀 START HERE
+An internal, company-facing tool that helps a product team (1) describe an AI
+product through a guided, branching questionnaire, (2) determine which EU AI
+Act risk category and obligations plausibly apply, (3) see what internal
+governance structure should own that risk, and (4) track the evidence
+checklist needed to demonstrate internal readiness before pursuing formal EU
+compliance work (legal review, conformity assessment, etc.).
 
-### First Time Setup? Follow This Order:
-
-1. **Read This File** (you're here!)
-2. **Read**: `16_COMPLETE_PACKAGE_SUMMARY.md` (5 min overview)
-3. **Read**: `15_INSTALLATION_AND_DEPLOYMENT.md` (detailed setup)
-4. **Copy Files** following the structure below
-5. **Run**: `npm install && npm test`
-6. **Start**: `npm run dev`
-
-**Total Setup Time**: 20-30 minutes
-
----
-
-## 📁 File Organization Guide
-
-### How to Organize Downloaded Files
-
-```
-your-project/
-├── lib/
-│   ├── classification-engine.ts       ← Copy: 01_classification-engine.ts
-│   └── assessment-log.ts              ← Copy: 02_assessment-log.ts
-│
-├── pages/
-│   ├── index.tsx                      ← Copy: 05_index.tsx
-│   ├── dashboard.tsx                  ← Copy: 08_dashboard.tsx
-│   ├── _app.tsx                       ← Copy: 14_app.tsx
-│   └── api/
-│       ├── classify.ts                ← Copy: 06_api_classify.ts
-│       └── assessments/
-│           └── route.ts               ← Copy: 07_api_assessments_route.ts
-│
-├── __tests__/
-│   ├── classification-engine.test.ts  ← Copy: 03_classification-engine.test.ts
-│   └── assessment-log.test.ts         ← Copy: 04_assessment-log.test.ts
-│
-├── data/
-│   └── rules.yaml                     ← Your existing rules file
-│
-├── package.json                       ← Copy: 09_package.json
-├── jest.config.js                     ← Copy: 10_jest.config.js
-├── jest.setup.js                      ← Copy: 11_jest.setup.js
-├── tsconfig.json                      ← Copy: 12_tsconfig.json
-├── next.config.js                     ← Copy: 13_next.config.js
-└── styles/
-    └── globals.css                    ← Keep your existing file
-```
+**This tool is not an EU compliance auditor and does not provide legal
+advice.** See [`REQUIREMENTS.md`](REQUIREMENTS.md) for the full scope note,
+gap analysis, and target design this build follows, and
+[`ACTION_PLAN.md`](ACTION_PLAN.md) for the phased implementation plan.
 
 ---
 
-## 📖 Documentation Files
+## Current state (MVP)
 
-### Quick Reference Documents
+The app has moved past the original static-form prototype. As of this
+writing:
 
-| File | Purpose | Read Time | When to Read |
-|------|---------|-----------|--------------|
-| **16_COMPLETE_PACKAGE_SUMMARY.md** | Overview of all files & fixes | 10 min | After this file |
-| **00_REVIEW_AND_CORRECTIONS.md** | Detailed code review | 15 min | Before implementing |
-| **15_INSTALLATION_AND_DEPLOYMENT.md** | Step-by-step setup guide | 20 min | During installation |
+- **Adaptive Q&A wizard** (`pages/assess.tsx`, driven by `lib/assessment-flow.ts`)
+  — a multi-step, branching interview: AI-system gate → product
+  characterization → role in the value chain (provider/deployer/importer/
+  distributor/product manufacturer, multi-select) → sector-specific
+  questions → Article 5 prohibited-practice screening → Article 6(3)
+  exemption questions (only when an Annex III category matched) →
+  geography/vulnerable groups/cross-border impact → free-text description.
+  Progress is saved to a `QaSession` on every step so a partially completed
+  interview can be resumed.
+- **Classification engine** (`lib/classification-engine.ts`) takes the
+  structured wizard answers (not just free-text keyword matching) and
+  applies, in order: Article 5 (prohibited, always exclusive) → Annex I/III
+  matching with the Article 6(3) exemption check applied before defaulting
+  to `HIGH_RISK` → Article 50 transparency → GPAI, including a systemic-risk
+  sub-classification (Article 51 compute threshold) → role-filtered
+  obligations → organizational risk score → `MINIMAL_RISK` default.
+  Annex III and Article 50 obligations can co-apply in one result. The
+  result includes a reasoning trace, an uncertainty/confidence summary, and
+  a **governance structure block** (recommended internal owner, review
+  cadence, escalation path) rather than a flat obligations list.
+- **Evidence checklist** — each applicable obligation becomes a persisted,
+  trackable `ChecklistItem` (status, owner, evidence link) tied to the
+  assessment, updatable independently via
+  `PATCH /api/systems/:id/checklist/:itemId` without re-running the
+  questionnaire.
+- **Append-only audit trail** — every assessment submission and every
+  checklist status/owner/evidence-link change writes an `AuditEvent`
+  (previous value, new value, actor, timestamp), readable per system via
+  `GET /api/systems/:id/audit`.
+- **Australia AI practices alignment** (`lib/australia-alignment.ts`) — if
+  "Australia" is selected as a geography, a 12-question step evaluates
+  alignment against the voluntary DISR/National AI Centre *Guidance for AI
+  Adoption* (21 Oct 2025), producing a separate aligned/partial/gap verdict
+  and checklist items alongside (and without affecting) the EU
+  classification.
+- **On-demand PDF report** (`lib/report-pdf.ts`,
+  `GET /api/systems/:id/report.pdf`) — a single, timestamped document
+  combining the submitted answers, the classification/reasoning trace, the
+  governance block, and the checklist's live status, generated server-side
+  from current database state so it reflects checklist changes made after
+  the original assessment.
+- **Authentication** — a seed-user-administered model (`lib/auth.ts`,
+  `lib/users.ts`): one pre-provisioned seed user (env-configured, bootstrapped
+  via `npm run seed:user`) logs in and creates other users; only the seed
+  user can create users or reset passwords (`/admin/users`). There is no
+  self-service password reset or SMTP flow in this MVP — non-seed users get
+  credentials out of band. Sessions are signed HttpOnly cookies
+  (HMAC-SHA256), not a third-party auth service.
+- **Persistent database** — Supabase Postgres via Prisma
+  (`prisma/schema.prisma`) replaces the original append-only JSONL file, so
+  state survives stateless/serverless hosting (Vercel or otherwise). Models:
+  `Assessment`, `ChecklistItem`, `AuditEvent`, `QaSession`, `User`.
+- **Admin storage tools** (`/admin/storage`, seed-user only) — see free-tier
+  database usage by table, download any record as a PDF, and delete
+  individual records or bulk-purge everything before a date.
+- **Optional LLM-assisted intake** (`lib/llm`, `lib/intake-suggest.ts`,
+  `lib/intake-clarify.ts`) — the free-text description can be sent to an LLM
+  (Gemini by default; OpenAI or Claude via env var) to suggest structured
+  wizard answers and ask clarifying questions for the user to confirm or
+  edit. The LLM never determines the classification itself — the
+  deterministic engine always computes the final result from the confirmed
+  structured answers.
 
----
+### Known gaps / not yet done
 
-## 🔧 Source Code Files
-
-### Core Library - Must Read & Understand
-
-**01_classification-engine.ts** (350 lines)
-- Main classification logic
-- Contains 7-step algorithm
-- 53 unit tests
-- **Read if**: Modifying rules or algorithm
-- **Key functions**:
-  - `classifyAISystem()` - Main function
-  - `validateInput()` - Validation
-  - `getRulesVersion()` - Version info
-
-**02_assessment-log.ts** (220 lines)
-- Append-only log handler
-- File-based storage
-- 40+ unit tests
-- **Read if**: Modifying data storage
-- **Key functions**:
-  - `appendAssessment()` - Save assessment
-  - `readAllAssessments()` - Load all
-  - `getStatistics()` - Get stats
-  - `exportAsJSON()` / `exportAsCSV()` - Export
-
----
-
-## 🎨 Frontend Files
-
-**05_index.tsx** (50 lines)
-- Landing page
-- Simple navigation
-- Read: For UI customization
-
-**08_dashboard.tsx** (550 lines)
-- Main dashboard component
-- 4 tabs: Assess, Results, History, Stats
-- Complete form handling
-- Read: For understanding UI flow
-
-**14_app.tsx** (25 lines)
-- Next.js app wrapper
-- Meta tags setup
-- Read: For global setup
-
----
-
-## 🔌 API Files
-
-**06_api_classify.ts** (75 lines)
-- POST endpoint for classification
-- Validation & error handling
-- Calls classification-engine
-- **Endpoint**: `POST /api/classify`
-
-**07_api_assessments_route.ts** (100 lines)
-- GET endpoints for data retrieval
-- Multiple actions: stats, search, export
-- **Endpoints**: `GET /api/assessments?action=...`
-
----
-
-## 🧪 Test Files
-
-**03_classification-engine.test.ts** (450 lines)
-- 53 unit tests
-- Tests all classification scenarios
-- Edge cases & validation
-- **Run**: `npm test classification-engine`
-
-**04_assessment-log.test.ts** (550 lines)
-- 40+ unit tests
-- Tests log operations
-- Mock file system
-- **Run**: `npm test assessment-log`
-
-### Run All Tests
-```bash
-npm test                    # Run all 93+ tests
-npm run test:watch         # Watch mode
-npm run test:coverage      # Coverage report (70%+ target)
-```
+- `data/assessments.json(l)` and `data/rules1.yaml` are leftovers from the
+  pre-database version and are not read by the running app; `data/rules.yaml`
+  is still the source the engine loads at startup.
+- `archive/` holds the original packaging docs from an earlier AI-generated
+  scaffold (numbered files like `01_classification-engine.ts` that no longer
+  exist) — kept for history only, not part of the current setup path.
 
 ---
 
-## ⚙️ Configuration Files
+## Getting started
 
-**09_package.json**
-- Dependencies: Next.js, React, TypeScript, Jest
-- Test scripts
-- Coverage thresholds
-- **What to do**: Use as-is, or update versions if needed
+### 1. Install dependencies
 
-**10_jest.config.js**
-- Jest test configuration
-- TypeScript support
-- Module mapping
-- **What to do**: Use as-is
-
-**11_jest.setup.js**
-- Test environment setup
-- Mocks for Next.js
-- **What to do**: Use as-is
-
-**12_tsconfig.json**
-- TypeScript strict mode enabled
-- Path aliases configured
-- **What to do**: Use as-is, customize if needed
-
-**13_next.config.js**
-- Next.js optimization
-- Security headers
-- **What to do**: Use as-is, customize if needed
-
----
-
-## 📋 Quick Commands Reference
-
-```bash
-# Setup
-npm install                 # Install all dependencies
-
-# Development
-npm run dev                 # Start dev server (http://localhost:3000)
-npm run build              # Build for production
-npm start                  # Start production server
-
-# Testing
-npm test                   # Run all 93+ tests
-npm run test:watch        # Watch tests (auto-run on changes)
-npm run test:coverage     # Generate coverage report
-npm test -- --verbose     # Detailed test output
-
-# Type checking
-npx tsc --noEmit          # Check TypeScript types
-
-# Linting
-npm run lint              # Run ESLint
-```
-
----
-
-## 🎯 Implementation Steps
-
-### Step 1: Copy Files (5 min)
-```bash
-# Copy all source files to correct locations
-# Use the file organization guide above
-```
-
-### Step 2: Install Dependencies (3 min)
 ```bash
 npm install
 ```
 
-### Step 3: Verify Setup (5 min)
-```bash
-# Run TypeScript check
-npx tsc --noEmit
+`postinstall` runs `prisma generate` automatically.
 
-# Run all tests (should see 93+ passing)
-npm test
+### 2. Configure environment variables
+
+```bash
+cp .env.example .env.local
+cp .env.local .env   # the Prisma CLI only auto-loads .env, not .env.local
 ```
 
-### Step 4: Start Development (2 min)
+Fill in `DATABASE_URL` / `DIRECT_URL` (Supabase Postgres), `SESSION_SECRET`,
+`SEED_USER_EMAIL` / `SEED_USER_PASSWORD`, and an LLM provider key if you want
+intake assistance. Full details, including common connection-string
+gotchas, are in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+### 3. Run the database migration
+
+```bash
+npx prisma migrate dev --name init
+```
+
+### 4. Bootstrap the seed user
+
+```bash
+npm run seed:user
+```
+
+### 5. Start the dev server
+
 ```bash
 npm run dev
-# Open http://localhost:3000
 ```
 
-### Step 5: Test API
+Log in at `http://localhost:3000/login` with your seed credentials, then
+rotate the seed password from `/admin/users`.
+
+---
+
+## Project structure
+
+```
+lib/
+  classification-engine.ts   Core classification logic + governance/checklist mapping
+  assessment-flow.ts         Wizard step order, branching, and completeness rules
+  assessment-log.ts          Assessment persistence (Prisma-backed)
+  checklist.ts               Checklist item reads/updates + audit event writes
+  audit-events.ts            Append-only audit log
+  qa-sessions.ts             In-progress wizard draft persistence
+  auth.ts / users.ts         Session cookies, password hashing, user CRUD
+  australia-alignment.ts     Australia voluntary AI guidance alignment engine
+  report-pdf.ts              Server-side PDF report generation
+  llm/                       Provider-agnostic LLM client (Gemini/OpenAI/Anthropic)
+  intake-suggest.ts / intake-clarify.ts   LLM-assisted intake helpers
+
+pages/
+  assess.tsx        Multi-step assessment wizard
+  dashboard.tsx      Stats, history, and results
+  login.tsx          Login screen
+  admin/             Seed-user-only: user management, storage/backup/purge
+  api/               classify, assessments, systems/:id (+checklist, audit, report.pdf),
+                     sessions, users, auth, admin, intake, rules
+
+data/rules.yaml      Article 5 / Annex I / Annex III / Article 50 / GPAI rule data
+prisma/schema.prisma Database schema (Assessment, ChecklistItem, AuditEvent, QaSession, User)
+```
+
+---
+
+## Testing
+
 ```bash
-# In another terminal
-curl -X POST http://localhost:3000/api/classify \
-  -H "Content-Type: application/json" \
-  -d '{
-    "systemName": "Test",
-    "description": "Test system",
-    "industry": "Healthcare",
-    "geographies": ["EU"],
-    "vulnerableGroups": [],
-    "fundamentalRightsImpact": false,
-    "crossBorderImpact": false
-  }'
+npm test                # run the Jest suite
+npm run test:watch      # watch mode
+npm run test:coverage   # coverage report
+npx tsc --noEmit        # type check
 ```
 
----
-
-## ✅ Verification Checklist
-
-After completing setup:
-
-- [ ] All files copied to correct locations
-- [ ] `npm install` completed successfully
-- [ ] `npx tsc --noEmit` shows no errors
-- [ ] `npm test` shows 93+ tests passing
-- [ ] `npm run build` succeeds
-- [ ] `npm run dev` starts server at localhost:3000
-- [ ] Can access landing page
-- [ ] Dashboard form loads
-- [ ] Can submit classification
-- [ ] API returns correct response
-- [ ] Data saved to `data/assessments.jsonl`
+All 231 tests pass and `tsc --noEmit` is clean.
 
 ---
 
-## 🐛 If Something Goes Wrong
+## Deployment
 
-### "Module not found" Error
-```bash
-# Clear cache and reinstall
-rm -rf .next node_modules
-npm install
-npm run build
-```
-
-### Tests Failing
-```bash
-# Run with verbose output
-npm test -- --verbose
-
-# Check specific test file
-npm test classification-engine.test.ts
-```
-
-### TypeScript Errors
-```bash
-# Check all type errors
-npx tsc --noEmit
-
-# Rebuild
-npm run build
-```
-
-### Port Already in Use
-```bash
-# Use different port
-npm run dev -- -p 3001
-```
-
----
-
-## 📊 What Each File Does
-
-### Architecture
-- **classification-engine.ts**: Core AI classification logic
-- **assessment-log.ts**: Data persistence (append-only)
-- **api/classify.ts**: HTTP endpoint for classification
-- **api/assessments/route.ts**: HTTP endpoint for data queries
-
-### UI/UX
-- **pages/index.tsx**: Landing page
-- **pages/dashboard.tsx**: Main assessment interface
-- **pages/_app.tsx**: App configuration
-
-### Configuration
-- **tsconfig.json**: TypeScript rules
-- **next.config.js**: Next.js settings
-- **jest.config.js**: Test runner settings
-- **package.json**: Dependencies & scripts
-
-### Testing
-- **__tests__/classification-engine.test.ts**: 53 tests
-- **__tests__/assessment-log.test.ts**: 40+ tests
-
----
-
-## 🔒 Security Notes
-
-### Already Built In
-- ✅ Input validation
-- ✅ TypeScript strict mode
-- ✅ XSS protection headers
-- ✅ Safe file operations
-- ✅ Error handling (no stack traces)
-
-### Additional Measures (Optional)
-- Rate limiting for APIs
-- HTTPS in production
-- Authentication if needed
-- Regular backups
-- Security headers tuning
-
-See `15_INSTALLATION_AND_DEPLOYMENT.md` for details.
-
----
-
-## 📈 Data Format
-
-### Assessment JSON Structure
-```json
-{
-  "id": "uuid",
-  "timestamp": "2024-01-01T00:00:00Z",
-  "systemName": "Facial Recognition",
-  "description": "...",
-  "classification": "HIGH_RISK",
-  "confidenceScore": 90,
-  "evidenceStrength": 90,
-  "violations": [...],
-  "highRiskMatches": [...],
-  "applicableArticles": [...],
-  "obligations": [...],
-  "reasoning": "...",
-  "rulesVersion": "3.0.0",
-  "metadata": {
-    "industry": "Law Enforcement",
-    "geographies": ["EU"],
-    "fundamentalRightsImpact": true,
-    "crossBorderImpact": true
-  }
-}
-```
-
-### Log File Location
-```
-data/assessments.jsonl
-```
-(JSONL = JSON Lines, one entry per line)
-
----
-
-## 🚀 Going to Production
-
-### Before Deployment
-1. ✅ All 93+ tests passing
-2. ✅ TypeScript compilation successful
-3. ✅ Production build: `npm run build`
-4. ✅ Tested with sample assessments
-5. ✅ Performance verified
-
-### Deployment Options
-1. **Vercel** (Easiest for Next.js)
-2. **Docker** (Containerized)
-3. **Linux** (Self-hosted with PM2)
-4. **Cloud** (AWS, GCP, Azure)
-
-See `15_INSTALLATION_AND_DEPLOYMENT.md` for step-by-step guides.
-
----
-
-## 📞 Getting Help
-
-### For Setup Issues
-1. Check `15_INSTALLATION_AND_DEPLOYMENT.md` → Troubleshooting
-2. Verify Node version: `node --version`
-3. Clear cache: `rm -rf .next node_modules && npm install`
-4. Check logs: `npm run dev` output
-
-### For Code Questions
-1. Review `00_REVIEW_AND_CORRECTIONS.md`
-2. Check code comments in source files
-3. Review test files for usage examples
-
-### For Feature Questions
-1. Check `16_COMPLETE_PACKAGE_SUMMARY.md`
-2. Review component documentation
-3. Check API endpoint documentation
-
----
-
-## 📚 File Reading Guide
-
-**Essential Reading** (Complete before starting)
-1. This file (index)
-2. `16_COMPLETE_PACKAGE_SUMMARY.md`
-3. `15_INSTALLATION_AND_DEPLOYMENT.md` (Step 1-5)
-
-**Reference During Development**
-- Source file comments
-- Test files (for usage examples)
-- API endpoint code
-
-**Before Deployment**
-- `15_INSTALLATION_AND_DEPLOYMENT.md` (All sections)
-- `00_REVIEW_AND_CORRECTIONS.md` (Understanding fixes)
-
----
-
-## 🎓 Learning Resources
-
-### Understanding the Code
-- Read test files first (shows expected behavior)
-- Then read the implementation
-- Compare with before/after in review document
-
-### Understanding EU AI Act
-- Review `rules.yaml` structure
-- Read classification logic in engine.ts
-- Check test cases for real scenarios
-
-### Understanding Architecture
-- No database (append-only log)
-- File-based persistence
-- Stateless API routes
-- Full client-side form validation
-
----
-
-## 💡 Pro Tips
-
-1. **Tests First**: Run tests before modifying code
-2. **Type Safety**: Enable TypeScript strict mode (already done)
-3. **Version Control**: Git track `rules.yaml`, not `assessments.jsonl`
-4. **Backups**: Regularly backup `data/assessments.jsonl`
-5. **Logs**: Check browser console and server logs
-6. **Performance**: Use `npm run test:coverage` to track quality
-
----
-
-## 📋 Final Checklist
-
-Before considering implementation complete:
-
-- [ ] All files in correct directories
-- [ ] `npm install` succeeded
-- [ ] All 93+ tests passing
-- [ ] TypeScript strict check passing
-- [ ] Development server running
-- [ ] Dashboard accessible
-- [ ] Form submitting data
-- [ ] API returning results
-- [ ] Data persisting to log file
-- [ ] Read documentation above
-- [ ] Understand the architecture
-- [ ] Ready for production setup
-
----
-
-## 🎉 You're Ready!
-
-You now have:
-- ✅ Complete codebase (7 source files)
-- ✅ Full test suite (93+ tests)
-- ✅ All configuration (6 config files)
-- ✅ Comprehensive documentation (3 guides)
-
-**Next Step**: Follow `15_INSTALLATION_AND_DEPLOYMENT.md`
-
-**Estimated Time to Production**: 1-2 hours
-
----
-
-**Quick Links**:
-- Installation: `15_INSTALLATION_AND_DEPLOYMENT.md`
-- Code Review: `00_REVIEW_AND_CORRECTIONS.md`
-- Full Summary: `16_COMPLETE_PACKAGE_SUMMARY.md`
-
-**Good luck! 🚀**
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for full setup: Supabase provisioning,
+required environment variables, auth bootstrap, and the LLM provider
+switch. The app is host-agnostic (Vercel, Render, Railway, a company
+server, or local) — only environment variables change.
