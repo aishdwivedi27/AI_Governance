@@ -155,3 +155,23 @@ Free-tier limits and eligible models change; if Gemini rejects the default, set 
 | `LLM_PROVIDER` | App runtime (`lib/llm`) | `gemini` (default), `openai` or `anthropic` |
 | `GEMINI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | App runtime (`lib/llm`) | Only the key for the chosen provider is needed |
 | `LLM_MODEL`, `LLM_TIMEOUT_MS` | App runtime (`lib/llm`) | Optional model override and request timeout |
+
+## Supabase keep-alive (free tier)
+
+Free-tier Supabase projects pause after ~7 days of inactivity. `.github/workflows/supabase-keepalive.yml` runs `select 1` daily using a dedicated, least-privilege role, so the app's real credentials are never used in CI.
+
+1. In the Supabase SQL editor (do **not** commit this SQL or put it in `prisma/migrations`):
+   ```sql
+   create role keepalive login password '<random-hex-password>' connection limit 2;
+   revoke all on database postgres from keepalive;
+   grant connect on database postgres to keepalive;
+   revoke all on schema public from keepalive;
+   alter role keepalive set statement_timeout = '5s';
+   ```
+   Generate the password with `openssl rand -hex 32` (hex needs no URL-encoding).
+2. Add a GitHub Actions secret `SUPABASE_KEEPALIVE_URL` (Settings > Secrets and variables > Actions):
+   `postgresql://keepalive.<project-ref>:<password>@<pooler-host>:6543/postgres?sslmode=require`
+   Never reuse `DATABASE_URL` here.
+3. Run the workflow once manually from the Actions tab to confirm it passes.
+
+GitHub disables scheduled workflows after 60 days without repo activity; re-enable it from the Actions tab if that happens.
