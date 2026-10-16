@@ -123,6 +123,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       proposedAnswer: result.proposedAnswer,
       assessment: result.assessment,
       turnsRemaining: MAX_USER_TURNS - userTurns,
+      provider: result.provider,
+      model: result.model,
     });
   } catch (error) {
     if (error instanceof LLMConfigError) {
