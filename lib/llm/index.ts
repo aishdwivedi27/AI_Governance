@@ -7,6 +7,7 @@
 //   LLM_PROVIDER = gemini | openai | anthropic   (default: gemini)
 //   LLM_MODEL    = optional model override        (default per provider, below)
 //   LLM_TIMEOUT_MS = optional request timeout     (default: 25000)
+//   LLM_EFFORT   = optional reasoning effort, Claude only (default: medium)
 //   GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY  (key for the chosen provider)
 //
 // The LLM only assists intake/explanation; the deterministic classification engine
@@ -35,7 +36,7 @@ const PROVIDERS: Record<
   anthropic: {
     call: callAnthropic,
     keyEnv: 'ANTHROPIC_API_KEY',
-    defaultModel: 'claude-haiku-4-5-20251001',
+    defaultModel: 'claude-sonnet-5-5',
   },
 };
 
@@ -59,6 +60,7 @@ export function getLLMConfig(env: NodeJS.ProcessEnv = process.env): LLMConfig {
     model: env.LLM_MODEL?.trim() || spec.defaultModel,
     apiKey,
     timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 25000,
+    effort: env.LLM_EFFORT?.trim().toLowerCase() || undefined,
   };
 }
 

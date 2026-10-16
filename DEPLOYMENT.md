@@ -139,7 +139,7 @@ LLM calls go through `lib/llm` (`generateText`), which picks the provider from e
 |---|---|---|---|
 | Gemini (default) | `gemini` | `GEMINI_API_KEY` | `gemini-3.6-flash` |
 | OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5-20251001` |
+| Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-5-5` (reasoning effort via `LLM_EFFORT`, default `medium`) |
 
 Free-tier limits and eligible models change; if Gemini rejects the default, set `LLM_MODEL` to a current free-tier model. Note free-tier Gemini traffic may be used by Google to improve its products, so avoid sending sensitive internal product details until you move to a paid tier or another provider (REQUIREMENTS.md, section on LLM data handling). `LLM_TIMEOUT_MS` (default 25000) should stay below your Vercel function's max duration.
 

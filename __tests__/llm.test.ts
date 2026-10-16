@@ -7,7 +7,7 @@ const fetchMock = jest.fn();
 beforeEach(() => {
   fetchMock.mockReset();
   global.fetch = fetchMock as unknown as typeof fetch;
-  for (const k of ['LLM_PROVIDER', 'LLM_MODEL', 'LLM_TIMEOUT_MS', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) {
+  for (const k of ['LLM_PROVIDER', 'LLM_MODEL', 'LLM_TIMEOUT_MS', 'LLM_EFFORT', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) {
     delete process.env[k];
   }
 });
@@ -106,6 +106,35 @@ describe('generateText', () => {
     expect(body.model).toBe('claude-custom');
     expect(body.system).toContain('sys');
     expect(body.system).toContain('JSON');
+  });
+
+  test('Claude 5.x defaults to Sonnet 5.5 with medium effort and no temperature', async () => {
+    process.env.LLM_PROVIDER = 'anthropic';
+    process.env.ANTHROPIC_API_KEY = 'ak';
+    fetchMock.mockResolvedValueOnce(
+      ok({ content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: '{}' }] })
+    );
+
+    const res = await generateText({ ...request, temperature: 0.3, maxTokens: 2000 });
+
+    expect(res).toMatchObject({ text: '{}', model: 'claude-sonnet-5-5' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.output_config).toEqual({ effort: 'medium' });
+    expect(body.temperature).toBeUndefined();
+    expect(body.max_tokens).toBe(8000);
+  });
+
+  test('Claude 4.x keeps temperature and sends no effort', async () => {
+    process.env.LLM_PROVIDER = 'anthropic';
+    process.env.ANTHROPIC_API_KEY = 'ak';
+    process.env.LLM_MODEL = 'claude-haiku-4-5';
+    fetchMock.mockResolvedValueOnce(ok({ content: [{ type: 'text', text: 'yo' }] }));
+
+    await generateText({ ...request, temperature: 0.3 });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.temperature).toBe(0.3);
+    expect(body.output_config).toBeUndefined();
   });
 
   test('wraps provider HTTP errors', async () => {

@@ -103,20 +103,31 @@ export const callOpenAI: LLMProviderFn = async (config, req: LLMRequest) => {
   return result(config, data?.choices?.[0]?.message?.content);
 };
 
+// Claude 4.x models still take temperature and no effort; Claude 5.x models think adaptively,
+// are steered by effort, and reject non-default temperature.
+const isLegacyClaude = (model: string) => /^claude-(haiku|sonnet|opus)-4/.test(model);
+
+// Thinking tokens count toward max_tokens, so leave room for reasoning before the answer.
+const MIN_THINKING_MAX_TOKENS = 8000;
+
 export const callAnthropic: LLMProviderFn = async (config, req: LLMRequest) => {
   // Anthropic has no JSON mode, so ask for it in the system prompt.
   const system = [req.system, req.json && 'Respond with a single valid JSON object and nothing else.']
     .filter(Boolean)
     .join('\n\n');
+  const legacy = isLegacyClaude(config.model);
+  const maxTokens = req.maxTokens ?? DEFAULT_MAX_TOKENS;
   const data = await postJson(
     config,
     'https://api.anthropic.com/v1/messages',
     { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
     {
       model: config.model,
-      max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+      max_tokens: legacy ? maxTokens : Math.max(maxTokens, MIN_THINKING_MAX_TOKENS),
       ...(system && { system }),
-      ...(req.temperature !== undefined && { temperature: req.temperature }),
+      ...(legacy
+        ? req.temperature !== undefined && { temperature: req.temperature }
+        : { output_config: { effort: config.effort ?? 'medium' } }),
       messages: req.messages,
     }
   );

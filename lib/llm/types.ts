@@ -26,6 +26,8 @@ export interface LLMConfig {
   model: string;
   apiKey: string;
   timeoutMs: number;
+  /** Reasoning effort for providers that support it (Anthropic: low | medium | high | xhigh | max). */
+  effort?: string;
 }
 
 export class LLMConfigError extends Error {}
