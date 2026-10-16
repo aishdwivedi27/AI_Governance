@@ -16,7 +16,7 @@ jest.mock('../lib/prisma', () => {
     assessment: { findUnique: jest.fn() },
     checklistItem: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
     auditEvent: { create: jest.fn(), findMany: jest.fn() },
-    qaSession: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+    qaSession: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), deleteMany: jest.fn() },
   };
   prisma.$transaction = jest.fn((cb: (tx: any) => unknown) => cb(prisma));
   return { prisma };
@@ -366,5 +366,42 @@ describe('Q&A sessions', () => {
     const res = mockRes();
     await sessionByIdHandler(mockReq({ query: { id: 's-1' } }), res);
     expect(res.statusCode).toBe(401);
+  });
+
+  test('DELETE removes an owned draft', async () => {
+    mockPrisma.qaSession.deleteMany.mockResolvedValueOnce({ count: 1 });
+    const res = mockRes();
+    await sessionByIdHandler(
+      mockReq({ method: 'DELETE', query: { id: 's-1' }, cookie: authAs('u1') }),
+      res
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res._json).toEqual({ ok: true });
+    expect(mockPrisma.qaSession.deleteMany).toHaveBeenCalledWith({
+      where: { id: 's-1', actorId: 'u1', NOT: { currentStep: { in: ['submitted', 'not_in_scope'] } } },
+    });
+  });
+
+  test("DELETE returns 404 for another user's or a submitted session", async () => {
+    mockPrisma.qaSession.deleteMany.mockResolvedValueOnce({ count: 0 });
+    const res = mockRes();
+    await sessionByIdHandler(
+      mockReq({ method: 'DELETE', query: { id: 's-1' }, cookie: authAs('u2') }),
+      res
+    );
+    expect(res.statusCode).toBe(404);
+  });
+
+  test('DELETE 401 when unauthenticated', async () => {
+    const res = mockRes();
+    await sessionByIdHandler(mockReq({ method: 'DELETE', query: { id: 's-1' } }), res);
+    expect(res.statusCode).toBe(401);
+    expect(mockPrisma.qaSession.deleteMany).not.toHaveBeenCalled();
+  });
+
+  test('PUT returns 405', async () => {
+    const res = mockRes();
+    await sessionByIdHandler(mockReq({ method: 'PUT', query: { id: 's-1' } }), res);
+    expect(res.statusCode).toBe(405);
   });
 });

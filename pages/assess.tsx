@@ -184,6 +184,19 @@ export default function AssessPage({ user }: { user: AuthedUser }) {
     [router, sessionId]
   );
 
+  const deleteDraft = async (id: string) => {
+    if (!window.confirm('Delete this draft? This cannot be undone.')) return;
+    try {
+      const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Draft not deleted');
+      setDrafts(prev => prev.filter(d => d.id !== id));
+      setMessage({ kind: 'info', text: 'Draft deleted.' });
+    } catch (err) {
+      setMessage({ kind: 'error', text: `Draft could not be deleted: ${err instanceof Error ? err.message : 'unknown error'}` });
+    }
+  };
+
   const goTo = async (target: StepId) => {
     setMessage(null);
     setStepId(target);
@@ -358,14 +371,22 @@ export default function AssessPage({ user }: { user: AuthedUser }) {
               <div className="pt-4 border-t space-y-2">
                 <p className="text-sm font-medium">Resume a draft</p>
                 {drafts.map(d => (
-                  <a
-                    key={d.id}
-                    href={`/assess?session=${d.id}`}
-                    className="block border rounded-lg p-3 text-sm hover:bg-gray-50"
-                  >
-                    <span className="font-medium">{d.answers?.systemName || 'Untitled assessment'}</span>
-                    <span className="text-gray-600"> - last edited {new Date(d.updatedAt).toLocaleString()}</span>
-                  </a>
+                  <div key={d.id} className="flex items-stretch gap-2">
+                    <a
+                      href={`/assess?session=${d.id}`}
+                      className="flex-1 block border rounded-lg p-3 text-sm hover:bg-gray-50"
+                    >
+                      <span className="font-medium">{d.answers?.systemName || 'Untitled assessment'}</span>
+                      <span className="text-gray-600"> - last edited {new Date(d.updatedAt).toLocaleString()}</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => deleteDraft(d.id)}
+                      className="border rounded-lg px-3 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 ))}
               </div>
             )}

@@ -71,6 +71,14 @@ export async function listQASessionsForActor(actorId: string, limit = 10): Promi
   return rows.map(mapRecord);
 }
 
+/** Deletes an unsubmitted draft owned by `actorId`; false if nothing was deleted. */
+export async function deleteQASessionForActor(id: string, actorId: string): Promise<boolean> {
+  const { count } = await prisma.qaSession.deleteMany({
+    where: { id, actorId, NOT: { currentStep: { in: ['submitted', 'not_in_scope'] } } },
+  });
+  return count > 0;
+}
+
 /**
  * Read-modify-write of the session's LLM exchange (suggestions, clarification transcripts).
  * Returns false when the session does not exist or is owned by someone else.
